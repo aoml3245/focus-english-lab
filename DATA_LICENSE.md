@@ -14,7 +14,7 @@ English definitions and synonym candidates include data derived from Princeton W
 
 WordNet 3.0 Copyright 2006 by Princeton University. All rights reserved. Permission to use, copy, modify and distribute the database for any purpose without fee or royalty is granted subject to retaining the WordNet copyright notice, license statements and disclaimer. Princeton provides the database as-is without warranties and does not grant use of its name for advertising.
 
-Full terms: [Princeton WordNet license and commercial use](https://wordnet.princeton.edu/license-and-commercial-use).
+Full terms: [`licenses/WORDNET-LICENSE.txt`](./licenses/WORDNET-LICENSE.txt) and [Princeton WordNet license and commercial use](https://wordnet.princeton.edu/license-and-commercial-use).
 
 ## Original corpus fields
 
