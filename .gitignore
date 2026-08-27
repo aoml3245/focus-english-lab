@@ -1,0 +1,13 @@
+node_modules/
+dist/
+work/
+design/
+scripts/data/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+.vite/
+coverage/
