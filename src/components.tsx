@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getExamTTSPrecacheState, loadVoiceProfileId, playTTS, stopTTS, subscribeExamTTSPrecache, type ExamTTSPrecacheState } from './tts'
+import { getExamTTSPrecacheState, loadVoiceProfileId, playTTS, stopTTS, subscribeExamTTSPrecache, type ExamTTSPrecacheState, type SpeechMode } from './tts'
 
 export const HOME_NAVIGATION_EVENT = 'focus-english-lab:navigate-home'
 
@@ -28,7 +28,7 @@ export function Timer({ seconds, onExpire, hidden = false, paused = false }: { s
   return <span className={left <= 15 ? 'timer timer--low' : 'timer'} aria-label={hidden ? '시간 숨김' : `남은 시간 ${mm}분 ${ss}초`}>{hidden ? '--:--' : `${mm}:${ss}`}</span>
 }
 
-export function AudioPrompt({ text, autoPlay = false, onPlaybackChange }: { text: string; autoPlay?: boolean; onPlaybackChange?: (active: boolean) => void }) {
+export function AudioPrompt({ text, speechMode, autoPlay = false, onPlaybackChange }: { text: string; speechMode: SpeechMode; autoPlay?: boolean; onPlaybackChange?: (active: boolean) => void }) {
   const [state, setState] = useState<'idle' | 'loading' | 'playing' | 'played' | 'error'>('idle')
   const [status, setStatus] = useState('')
   const [precache, setPrecache] = useState<ExamTTSPrecacheState>(() => getExamTTSPrecacheState())
@@ -42,7 +42,7 @@ export function AudioPrompt({ text, autoPlay = false, onPlaybackChange }: { text
       const result = await playTTS(text, loadVoiceProfileId(), (message) => {
         setStatus(message)
         setState(message === '재생 중…' ? 'playing' : 'loading')
-      }, { maxWaitMs: 60_000 })
+      }, { maxWaitMs: 60_000, speechMode })
       if (result === 'cancelled') return
       setState('played')
       setStatus(result === 'fallback' ? '시스템 음성으로 재생했습니다.' : '한 번 재생했습니다.')
@@ -51,7 +51,7 @@ export function AudioPrompt({ text, autoPlay = false, onPlaybackChange }: { text
       setState('error')
       setStatus(error instanceof Error ? error.message : '오디오를 재생하지 못했습니다.')
     } finally { onPlaybackChange?.(false) }
-  }, [onPlaybackChange, text])
+  }, [onPlaybackChange, speechMode, text])
   useEffect(() => {
     stopTTS()
     started.current = false

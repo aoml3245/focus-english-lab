@@ -60,7 +60,8 @@ const DEFAULT_PROFILE: VoiceProfileId = 'toefl-balanced'
 const SPEAKER_RE = /(?:^|\s)([A-Z][A-Za-z ]{0,24}):\s*/g
 
 type ProgressHandler = (message: string, detail?: TTSProgressDetail) => void
-type SpeechMode = 'dialogue' | 'sentence'
+export type SpeechMode = 'dialogue' | 'sentence'
+export type ExamTTSAudio = { text: string; speechMode: SpeechMode }
 type PlayOptions = { maxWaitMs?: number; speechMode?: SpeechMode }
 type BrowserSpeechPart = { text: string; voice: string }
 type WorkerRequest = {
@@ -311,6 +312,11 @@ function splitSpeakers(text: string) {
 
 export function normalizeSentenceTTSInput(text: string) {
   return text.replace(/\r\n?/g, '\n').split(/\n+/).map((line) => line.trim()).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
+}
+
+export function examSpeechMode(section: 'listening' | 'speaking', title: string): SpeechMode {
+  if (section === 'speaking' || title === 'Listen and Choose a Response') return 'sentence'
+  return 'dialogue'
 }
 
 function chunkSpeechParts(parts: Array<{ text: string; speaker: number }>, maxLength = 120) {
@@ -664,7 +670,7 @@ async function getSpeech(text: string, profile: VoiceProfile, speechMode: Speech
   return synthesis
 }
 
-export async function prepareExamTTS(texts: string[], profileId: VoiceProfileId, onProgress: ProgressHandler) {
+export async function prepareExamTTS(audio: ExamTTSAudio[], profileId: VoiceProfileId, onProgress: ProgressHandler) {
   examPrecacheController?.abort()
   const controller = new AbortController()
   examPrecacheController = controller
@@ -675,16 +681,21 @@ export async function prepareExamTTS(texts: string[], profileId: VoiceProfileId,
     return result
   }
   const profile = getVoiceProfile(profileId)
-  const uniqueTexts = [...new Set(texts.filter(Boolean))]
-  const precacheTexts = uniqueTexts
+  const uniqueAudio = new Map<string, ExamTTSAudio>()
+  for (const entry of audio) {
+    if (!entry.text) continue
+    uniqueAudio.set(`${entry.speechMode}\u0000${entry.text}`, entry)
+  }
+  const precacheAudio = [...uniqueAudio.values()]
   const generation = ++examPrecacheGeneration
-  reportExamPrecache({ status: precacheTexts.length ? 'preparing' : 'ready', completed: 0, total: precacheTexts.length, current: 0, percent: precacheTexts.length ? 0 : 100, message: precacheTexts.length ? `시험 음성 0/${precacheTexts.length} 변환 준비` : '변환할 시험 음성이 없습니다.' })
+  reportExamPrecache({ status: precacheAudio.length ? 'preparing' : 'ready', completed: 0, total: precacheAudio.length, current: 0, percent: precacheAudio.length ? 0 : 100, message: precacheAudio.length ? `시험 음성 0/${precacheAudio.length} 변환 준비` : '변환할 시험 음성이 없습니다.' })
   void (async () => {
-    for (let index = 0; index < precacheTexts.length; index += 1) {
+    for (let index = 0; index < precacheAudio.length; index += 1) {
       if (generation !== examPrecacheGeneration || controller.signal.aborted) return
-      const total = precacheTexts.length
+      const total = precacheAudio.length
+      const entry = precacheAudio[index]
       reportExamPrecache({ status: 'preparing', completed: index, total, current: index + 1, percent: Math.round(index / total * 100), message: `시험 음성 ${index + 1}/${total} 변환 중` })
-      await getSpeech(precacheTexts[index], profile, 'dialogue', (_message, detail) => {
+      await getSpeech(entry.text, profile, entry.speechMode, (_message, detail) => {
         if (generation !== examPrecacheGeneration || controller.signal.aborted) return
         const itemProgress = detail?.phase === 'generating' && detail.percent !== undefined ? detail.percent / 100 : 0
         reportExamPrecache({ status: 'preparing', completed: index, total, current: index + 1, percent: Math.min(99, Math.round((index + itemProgress) / total * 100)), message: `시험 음성 ${index + 1}/${total} 변환 중` })
@@ -695,7 +706,7 @@ export async function prepareExamTTS(texts: string[], profileId: VoiceProfileId,
     if (generation !== examPrecacheGeneration || controller.signal.aborted) return
     reportExamPrecache({ ...examPrecacheState, status: 'error', message: error instanceof Error ? error.message : '시험 음성을 미리 변환하지 못했습니다.' })
   }).finally(() => { if (examPrecacheController === controller) examPrecacheController = null })
-  return { ...result, clips: precacheTexts.length }
+  return { ...result, clips: precacheAudio.length }
 }
 
 function playElement(audio: HTMLAudioElement, generation: number, signal: AbortSignal, onProgress: ProgressHandler) {

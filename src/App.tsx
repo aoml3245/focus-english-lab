@@ -5,7 +5,7 @@ import ExamData from './ExamData'
 import { buildFullPracticeSetFrom, buildSectionPracticeFrom, buildTaskPracticeFrom, countBySectionFrom, getActiveExamPackInfo, getActivePracticeItems, getAvailablePracticeItems, getPracticeTaskTypesFrom } from './examPack'
 import { displayAnswer, getSessionStats, isCorrect } from './review'
 import { finishSession, loadActive, loadExcludedItemIds, loadHistory, saveActive, setSessionRandomEligibility } from './storage'
-import { getVoiceProfile, hasLocalTtsServer, playTTS, prepareExamTTS, primeTTSPlayback, stopAllTTS, stopTTS, subscribeExamTTSPrecache, type TTSProgressDetail } from './tts'
+import { examSpeechMode, getVoiceProfile, hasLocalTtsServer, playTTS, prepareExamTTS, primeTTSPlayback, stopAllTTS, stopTTS, subscribeExamTTSPrecache, type TTSProgressDetail } from './tts'
 import type { Answer, BaseItem, PracticeMode, SavedSession, Section } from './types'
 
 const Vocabulary = lazy(() => import('./Vocabulary'))
@@ -217,7 +217,9 @@ function Intro({ items, mode, practiceLabel, onBack, onStart: navigateToTest }: 
   const [attempt, setAttempt] = useState(0)
   const [preparation, setPreparation] = useState<{ phase: 'preparing' | 'ready' | 'system' | 'fallback' | 'error'; message: string; progress?: TTSProgressDetail }>({ phase: 'preparing', message: '음성 준비를 시작합니다…' })
   const [preview, setPreview] = useState<'idle' | 'playing' | 'done' | 'error'>('idle')
-  const examAudioTexts = items.map((item) => item.audioText || '').filter(Boolean)
+  const examAudio = items.flatMap((item) => item.audioText && (item.section === 'listening' || item.section === 'speaking')
+    ? [{ text: item.audioText, speechMode: examSpeechMode(item.section, item.title) }]
+    : [])
   useEffect(() => {
     let active = true
     const unsubscribe = subscribeExamTTSPrecache((state) => {
@@ -226,7 +228,7 @@ function Intro({ items, mode, practiceLabel, onBack, onStart: navigateToTest }: 
       else setPreparation({ phase: state.status === 'ready' ? 'ready' : 'preparing', message: state.message, progress: { phase: state.status === 'ready' ? 'ready' : 'generating', percent: state.percent, cached: state.status === 'ready' } })
     })
     setPreparation({ phase: 'preparing', message: '음성 준비를 시작합니다…' })
-    prepareExamTTS(examAudioTexts, profile.id, (message, progress) => { if (active) setPreparation((current) => ({ ...current, message, progress: progress || current.progress })) })
+    prepareExamTTS(examAudio, profile.id, (message, progress) => { if (active) setPreparation((current) => ({ ...current, message, progress: progress || current.progress })) })
       .then((result) => {
         if (!active) return
         if (result.engine !== 'kokoro') setPreparation({ phase: result.fallback ? 'fallback' : 'system', message: result.fallback ? 'AI 엔진 대신 기기 영어 음성이 준비됐습니다.' : '선택한 기기 영어 음성이 준비됐습니다. 첫 듣기 문항부터 바로 재생됩니다.' })
@@ -237,7 +239,7 @@ function Intro({ items, mode, practiceLabel, onBack, onStart: navigateToTest }: 
   const playCheck = async () => {
     setPreview('playing')
     try {
-      const result = await playTTS(PREFLIGHT_AUDIO_TEXT, profile.id, () => undefined)
+      const result = await playTTS(PREFLIGHT_AUDIO_TEXT, profile.id, () => undefined, { speechMode: 'sentence' })
       if (result !== 'cancelled') setPreview('done')
     } catch { setPreview('error') }
   }
@@ -298,7 +300,7 @@ function Question({ item, answer, locked = false, onAnswer, onAudioState, onCoac
     return <div className="single-column"><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><div className="cloze-passage">{pieces.map((piece, i) => { if (!piece.endsWith('___')) return <span key={i}>{piece}</span>; blank += 1; const index = blank; return <label key={i}>{piece.slice(0, -3)}<input aria-label={`빈칸 ${index + 1}`} disabled={locked} value={values[index] || ''} onChange={(event) => { const next = [...values]; next[index] = event.target.value; onAnswer(next) }} /></label> })}</div></div>
   }
   if (item.kind === 'multiple-choice') return <SplitQuestion item={item} answer={answer} locked={locked} onAnswer={onAnswer} />
-  if (item.kind === 'listen-choice') return <div className="single-column listening"><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><AudioPrompt key={item.id} text={item.audioText!} autoPlay onPlaybackChange={onAudioState} /><h2>{item.prompt || 'Choose the best response.'}</h2><Options options={item.options!} answer={answer} locked={locked} onAnswer={onAnswer} /></div>
+  if (item.kind === 'listen-choice') return <div className="single-column listening"><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><AudioPrompt key={item.id} text={item.audioText!} speechMode={examSpeechMode('listening', item.title)} autoPlay onPlaybackChange={onAudioState} /><h2>{item.prompt || 'Choose the best response.'}</h2><Options options={item.options!} answer={answer} locked={locked} onAnswer={onAnswer} /></div>
   if (item.kind === 'sentence-build') {
     const chosen = Array.isArray(answer) ? answer : []
     const used = new Map<string, number>()
@@ -316,7 +318,7 @@ function Question({ item, answer, locked = false, onAnswer, onAudioState, onCoac
     const text = typeof answer === 'string' ? answer : ''
     return <div className="writing-layout writing-layout--coach"><div><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><p className="writing-prompt">{item.prompt}</p>{item.passage && <pre className="student-posts">{item.passage}</pre>}</div><div className="editor"><div className="editor-meta"><strong>Your response</strong><span>{text.trim() ? text.trim().split(/\s+/).length : 0} words</span></div><textarea value={text} onChange={(event) => onAnswer(event.target.value)} spellCheck={false} placeholder="Type your response here…" /></div><Suspense fallback={<aside className="writing-coach writing-coach--loading">AI 코치를 불러오는 중입니다…</aside>}><WritingCoach key={item.id} item={item} response={text} onApply={onAnswer} onBusyChange={onCoachState} /></Suspense></div>
   }
-  return <div className="single-column speaking"><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><AudioPrompt key={item.id} text={item.audioText!} autoPlay /><div className="speaking-prompt">{item.kind === 'interview' ? item.audioText : 'Repeat the sentence you heard.'}</div><Recorder onRecorded={(duration) => onAnswer(duration)} /></div>
+  return <div className="single-column speaking"><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><AudioPrompt key={item.id} text={item.audioText!} speechMode={examSpeechMode('speaking', item.title)} autoPlay /><div className="speaking-prompt">{item.kind === 'interview' ? item.audioText : 'Repeat the sentence you heard.'}</div><Recorder onRecorded={(duration) => onAnswer(duration)} /></div>
 }
 
 function ContextLabel({ item }: { item: BaseItem }) { return item.context ? <small className="context-label">{item.topic} · {item.context}</small> : null }
