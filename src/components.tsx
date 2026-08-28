@@ -74,19 +74,39 @@ export function Recorder({ onRecorded }: { onRecorded: (duration: number) => voi
   const [state, setState] = useState<'idle' | 'recording' | 'done' | 'denied'>('idle')
   const [duration, setDuration] = useState(0)
   const recorder = useRef<MediaRecorder | null>(null)
+  const mediaStream = useRef<MediaStream | null>(null)
+  const disposed = useRef(false)
   const startedAt = useRef(0)
+  useEffect(() => {
+    disposed.current = false
+    return () => {
+      disposed.current = true
+      const activeRecorder = recorder.current
+      if (activeRecorder && activeRecorder.state !== 'inactive') {
+        activeRecorder.onstop = null
+        activeRecorder.stop()
+      }
+      mediaStream.current?.getTracks().forEach((track) => track.stop())
+      mediaStream.current = null
+    }
+  }, [])
   const stop = () => recorder.current?.stop()
   const start = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mediaRecorder = new MediaRecorder(stream)
+      const nextStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (disposed.current) { nextStream.getTracks().forEach((track) => track.stop()); return }
+      const mediaRecorder = new MediaRecorder(nextStream)
+      mediaStream.current = nextStream
       recorder.current = mediaRecorder; startedAt.current = Date.now(); setState('recording')
       mediaRecorder.onstop = () => {
         const elapsed = Math.max(1, Math.round((Date.now() - startedAt.current) / 1000))
-        stream.getTracks().forEach((track) => track.stop()); setDuration(elapsed); setState('done'); onRecorded(elapsed)
+        nextStream.getTracks().forEach((track) => track.stop())
+        mediaStream.current = null
+        if (disposed.current) return
+        setDuration(elapsed); setState('done'); onRecorded(elapsed)
       }
       mediaRecorder.start()
-    } catch { setState('denied') }
+    } catch { if (!disposed.current) setState('denied') }
   }
   if (state === 'denied') return <p className="notice notice--error">마이크 권한이 필요합니다. 브라우저 주소창에서 권한을 허용한 뒤 다시 시도하세요.</p>
   return <div className="recorder">

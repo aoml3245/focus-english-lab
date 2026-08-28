@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { askWritingCoach, coachWriting, getCoachModelStatus, loadWritingFeedback, saveSelectedCoachModel, type CoachModelStatus, type WritingFeedback } from './writingCoachEngine'
 import type { BaseItem } from './types'
 
@@ -12,15 +12,23 @@ export default function WritingCoach({ item, response, onApply, onBusyChange }: 
   const [question, setQuestion] = useState('')
   const [chat, setChat] = useState<ChatMessage[]>([])
   const [asking, setAsking] = useState(false)
+  const mounted = useRef(true)
   const wordCount = response.trim() ? response.trim().split(/\s+/).length : 0
 
   useEffect(() => { let active = true; getCoachModelStatus().then((status) => { if (active) setModelStatus(status) }); return () => { active = false } }, [])
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false; onBusyChange?.(false) }
+  }, [onBusyChange])
 
   const runCoach = async () => {
     setLoading(true); onBusyChange?.(true); setError(''); setChat([])
-    try { setFeedback(await coachWriting(item, response)) }
-    catch (cause) { setError(cause instanceof Error ? cause.message : '코칭 결과를 생성하지 못했습니다.') }
-    finally { setLoading(false); onBusyChange?.(false) }
+    try {
+      const result = await coachWriting(item, response)
+      if (mounted.current) setFeedback(result)
+    }
+    catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : '코칭 결과를 생성하지 못했습니다.') }
+    finally { if (mounted.current) { setLoading(false); onBusyChange?.(false) } }
   }
 
   const ask = async () => {
@@ -29,9 +37,9 @@ export default function WritingCoach({ item, response, onApply, onBusyChange }: 
     setQuestion(''); setAsking(true); onBusyChange?.(true); setChat((current) => [...current, { role: 'learner', text: learnerQuestion }])
     try {
       const answer = await askWritingCoach(item, response, feedback, learnerQuestion)
-      setChat((current) => [...current, { role: 'coach', text: answer }])
-    } catch (cause) { setChat((current) => [...current, { role: 'coach', text: cause instanceof Error ? cause.message : '답변을 만들지 못했습니다.' }]) }
-    finally { setAsking(false); onBusyChange?.(false) }
+      if (mounted.current) setChat((current) => [...current, { role: 'coach', text: answer }])
+    } catch (cause) { if (mounted.current) setChat((current) => [...current, { role: 'coach', text: cause instanceof Error ? cause.message : '답변을 만들지 못했습니다.' }]) }
+    finally { if (mounted.current) { setAsking(false); onBusyChange?.(false) } }
   }
 
   const generalModels = modelStatus?.installed.filter((model) => !model.toLowerCase().includes('translate')) || []

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowIcon, Brand } from './components'
 import { loadFavorites, requestVocabulary, type LearningEntry } from './learning'
 import { evaluateStudyAnswer, type StudyAnswerFeedback } from './studyGameCoach'
@@ -34,12 +34,13 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
   const [evaluating, setEvaluating] = useState(false)
   const [feedback, setFeedback] = useState<StudyAnswerFeedback | null>(null)
   const [feedbackError, setFeedbackError] = useState('')
+  const evaluationRequest = useRef(0)
   const favorites = useMemo(() => loadFavorites(), [])
 
   useEffect(() => {
     let active = true
     requestVocabulary().then((entries) => { if (active) setVocabulary(entries) }).catch((cause: unknown) => { if (active) setLoadError(cause instanceof Error ? cause.message : '단어 데이터를 불러오지 못했습니다.') })
-    return () => { active = false }
+    return () => { active = false; evaluationRequest.current += 1 }
   }, [])
 
   const available = useMemo(() => vocabulary.filter((entry) =>
@@ -49,7 +50,7 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
     (game === 'vocabulary' || entry.source === 'corpus'),
   ).length, [academicOnly, favorites, game, level, savedOnly, vocabulary])
 
-  const resetAnswer = () => { setResponse(''); setRevealed(false); setJudgment(null); setFeedback(null); setFeedbackError('') }
+  const resetAnswer = () => { evaluationRequest.current += 1; setResponse(''); setRevealed(false); setJudgment(null); setEvaluating(false); setFeedback(null); setFeedbackError('') }
   const start = () => {
     const next = buildStudyQuestions(vocabulary, game, size, { level, academicOnly, savedWords: savedOnly ? favorites : undefined })
     setQuestions(next); setIndex(0); setCorrect(0); resetAnswer()
@@ -77,10 +78,14 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
   const next = () => { setIndex((value) => value + 1); resetAnswer() }
   const evaluate = async () => {
     if (!question || !response.trim()) return
+    const requestId = ++evaluationRequest.current
     setEvaluating(true); setFeedbackError('')
-    try { setFeedback(await evaluateStudyAnswer(question, response.trim())) }
-    catch (cause) { setFeedbackError(cause instanceof Error ? cause.message : '평가를 완료하지 못했습니다.') }
-    finally { setEvaluating(false) }
+    try {
+      const result = await evaluateStudyAnswer(question, response.trim())
+      if (evaluationRequest.current === requestId) setFeedback(result)
+    }
+    catch (cause) { if (evaluationRequest.current === requestId) setFeedbackError(cause instanceof Error ? cause.message : '평가를 완료하지 못했습니다.') }
+    finally { if (evaluationRequest.current === requestId) setEvaluating(false) }
   }
 
   return <div className="study-page">

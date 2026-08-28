@@ -1,4 +1,4 @@
-import { type MouseEvent as ReactMouseEvent, useRef, useState } from 'react'
+import { type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
 import {
   analyzeWordWithLocalLlm,
   findDictionaryEntry,
@@ -28,6 +28,7 @@ export default function ReadingAssistant({ passage, topic }: { passage: string; 
   const [sentence, setSentence] = useState<SentenceResult | null>(null)
   const [sentenceLoading, setSentenceLoading] = useState(false)
   const [notice, setNotice] = useState('단어를 클릭하거나 문장을 드래그해 선택하세요.')
+  useEffect(() => () => { requestRef.current += 1 }, [])
 
   const inspectWord = async (rawWord: string) => {
     const word = normalizeWord(rawWord)
