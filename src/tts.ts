@@ -33,7 +33,7 @@ export type TTSProgressDetail = {
 }
 
 export type TTSBackendPreference = 'auto' | 'webgpu' | 'wasm'
-export type TTSRuntimeInfo = { runtime: 'native-webgpu-ep' | 'wasm'; runtimeVariant: 'standard' | 'asyncify'; ortVersion: string; dtype: string }
+export type TTSRuntimeInfo = { runtime: 'native-webgpu-ep' | 'wasm'; runtimeVariant: 'standard' | 'asyncify'; ortVersion: string; dtype: string; threads: number }
 
 export const VOICE_PROFILES: VoiceProfile[] = [
   { id: 'toefl-balanced', name: 'TOEFL 균형형', shortLabel: 'AI · 미국식 혼합', description: '대화에서는 여성·남성 화자를 자동으로 나누고, 강의에서는 자연스러운 미국식 음성을 사용합니다.', accent: '미국식 · 여성/남성', primary: 'af_heart', secondary: 'am_michael', recommended: true },
@@ -61,6 +61,8 @@ type WorkerRequest = {
   abort?: () => void
 }
 let activeAudio: HTMLAudioElement | null = null
+let unlockedAudio: HTMLAudioElement | null = null
+let silentUnlockUrl: string | null = null
 let activeUrls: string[] = []
 let playbackGeneration = 0
 const speechCache = new Map<string, Blob[]>()
@@ -89,6 +91,17 @@ export function browserSupportsWebGPU() {
   return typeof navigator !== 'undefined' && 'gpu' in navigator && window.isSecureContext
 }
 
+export function isIOSBrowser() {
+  if (typeof navigator === 'undefined') return false
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+}
+
+function debugWasmThreadOverride() {
+  if (typeof window === 'undefined' || !['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)) return undefined
+  const value = Number(new URLSearchParams(window.location.search).get('tts-threads'))
+  return Number.isInteger(value) && value >= 1 && value <= 4 ? value : undefined
+}
+
 export function loadTTSBackendPreference(): TTSBackendPreference {
   try {
     const stored = localStorage.getItem(BACKEND_STORAGE_KEY)
@@ -97,7 +110,9 @@ export function loadTTSBackendPreference(): TTSBackendPreference {
 }
 
 export function resolveTTSBackend(preference = loadTTSBackendPreference()): 'webgpu' | 'wasm' {
-  return preference !== 'wasm' && browserSupportsWebGPU() ? 'webgpu' : 'wasm'
+  if (preference === 'wasm') return 'wasm'
+  if (preference === 'webgpu') return browserSupportsWebGPU() ? 'webgpu' : 'wasm'
+  return !isIOSBrowser() && browserSupportsWebGPU() ? 'webgpu' : 'wasm'
 }
 
 export function saveTTSBackendPreference(preference: TTSBackendPreference) {
@@ -156,6 +171,63 @@ function releaseAudio() {
   activeUrls = []
 }
 
+function createSilentWavUrl() {
+  if (silentUnlockUrl) return silentUnlockUrl
+  const sampleCount = 240
+  const bytes = new Uint8Array(44 + sampleCount)
+  const view = new DataView(bytes.buffer)
+  const write = (offset: number, value: string) => {
+    for (let index = 0; index < value.length; index += 1) bytes[offset + index] = value.charCodeAt(index)
+  }
+  write(0, 'RIFF')
+  view.setUint32(4, 36 + sampleCount, true)
+  write(8, 'WAVE')
+  write(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, 1, true)
+  view.setUint32(24, 24_000, true)
+  view.setUint32(28, 24_000, true)
+  view.setUint16(32, 1, true)
+  view.setUint16(34, 8, true)
+  write(36, 'data')
+  view.setUint32(40, sampleCount, true)
+  bytes.fill(128, 44)
+  silentUnlockUrl = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }))
+  return silentUnlockUrl
+}
+
+// Safari requires play() to happen in the original tap handler. Reusing that
+// same element lets an asynchronously generated Kokoro chunk start later.
+function primeIOSAudioElement() {
+  if (!isIOSBrowser() || !navigator.userActivation?.isActive) return null
+  const audio = unlockedAudio || new Audio()
+  unlockedAudio = audio
+  audio.setAttribute('playsinline', '')
+  audio.preload = 'auto'
+  const unlockUrl = createSilentWavUrl()
+  audio.src = unlockUrl
+  audio.volume = 0
+  void audio.play().then(() => {
+    // A cached clip can replace the silent source almost immediately. Do not
+    // let the unlock promise pause that real clip when the two overlap.
+    if (audio.src === unlockUrl || audio.currentSrc === unlockUrl) {
+      audio.pause()
+      audio.currentTime = 0
+    }
+    audio.volume = 1
+    recordTTSDiagnostic({ source: 'app', stage: 'audio-unlocked', message: '사용자 탭으로 iOS 오디오 재생 권한을 준비했습니다.' })
+  }).catch((error) => {
+    audio.volume = 1
+    recordTTSDiagnostic({ source: 'app', stage: 'audio-unlock-error', message: error instanceof Error ? error.message : String(error) })
+  })
+  return audio
+}
+
+export function primeTTSPlayback() {
+  primeIOSAudioElement()
+}
+
 function stopPlayback() {
   playbackGeneration += 1
   activePlaybackController?.abort()
@@ -166,16 +238,26 @@ function stopPlayback() {
   if ('speechSynthesis' in window) window.speechSynthesis.cancel()
 }
 
-function terminateActiveBrowserWork() {
+function cancelActiveBrowserWork() {
   if (!browserKokoroWorker || workerRequests.size === 0) return
-  failWorker(new DOMException('Audio request cancelled', 'AbortError'))
-  lastBrowserKokoroProgress = null
+  const error = new DOMException('Audio request cancelled', 'AbortError')
+  for (const [requestId, request] of workerRequests) {
+    // Let model initialization finish, but detach speech immediately. Killing a
+    // multi-threaded ORT Worker mid-run makes iOS WebKit kill the next WASM
+    // Worker created in the same page. Detached chunks can never reach audio.
+    if (requestId.startsWith('init-')) continue
+    browserKokoroWorker.postMessage({ type: 'cancel', requestId })
+    request.abort?.()
+    request.reject(error)
+    workerRequests.delete(requestId)
+  }
+  recordTTSDiagnostic({ source: 'app', stage: 'work-cancelled', message: '재생 요청을 분리하고 진행 중인 결과를 폐기합니다.' })
 }
 
 export function stopTTS() {
   recordTTSDiagnostic({ source: 'app', stage: 'stop', message: '현재 TTS 재생과 추론을 중지합니다.' })
   stopPlayback()
-  terminateActiveBrowserWork()
+  cancelActiveBrowserWork()
 }
 
 export function stopAllTTS() {
@@ -183,7 +265,7 @@ export function stopAllTTS() {
   examPrecacheGeneration += 1
   examPrecacheController?.abort()
   examPrecacheController = null
-  terminateActiveBrowserWork()
+  cancelActiveBrowserWork()
 }
 
 function splitSpeakers(text: string) {
@@ -243,6 +325,7 @@ async function loadBrowserKokoro(onProgress: ProgressHandler, signal?: AbortSign
               type: 'init',
               requestId,
               backend,
+              threads: debugWasmThreadOverride(),
               wasmBaseUrl: new URL(`${import.meta.env.BASE_URL}ort/`, window.location.origin).href,
             })
           })
@@ -285,7 +368,7 @@ function failWorker(error: Error) {
 function getBrowserKokoroWorker() {
   if (browserKokoroWorker) return browserKokoroWorker
   const worker = new Worker(new URL('./tts.worker.ts', import.meta.url), { type: 'module', name: 'focus-english-kokoro' })
-  worker.onmessage = (event: MessageEvent<{ type: string; requestId: string; blob?: Blob; index?: number; message?: string; stage?: string; elapsedMs?: number; detail?: Record<string, unknown>; percent?: number; loadedBytes?: number; totalBytes?: number; file?: string; backend?: 'webgpu' | 'wasm'; dtype?: string; runtime?: 'native-webgpu-ep' | 'wasm'; runtimeVariant?: 'standard' | 'asyncify'; ortVersion?: string }>) => {
+  worker.onmessage = (event: MessageEvent<{ type: string; requestId: string; blob?: Blob; index?: number; message?: string; stage?: string; elapsedMs?: number; detail?: Record<string, unknown>; percent?: number; loadedBytes?: number; totalBytes?: number; file?: string; backend?: 'webgpu' | 'wasm'; dtype?: string; runtime?: 'native-webgpu-ep' | 'wasm'; runtimeVariant?: 'standard' | 'asyncify'; ortVersion?: string; threads?: number }>) => {
     const message = event.data
     const request = workerRequests.get(message.requestId)
     if (message.type === 'diagnostic') {
@@ -304,9 +387,9 @@ function getBrowserKokoroWorker() {
       return
     }
     if (message.type === 'backend-info') {
-      if (message.runtime && message.runtimeVariant && message.ortVersion) activeBrowserRuntimeInfo = { runtime: message.runtime, runtimeVariant: message.runtimeVariant, ortVersion: message.ortVersion, dtype: message.dtype || 'unknown' }
+      if (message.runtime && message.runtimeVariant && message.ortVersion) activeBrowserRuntimeInfo = { runtime: message.runtime, runtimeVariant: message.runtimeVariant, ortVersion: message.ortVersion, dtype: message.dtype || 'unknown', threads: message.threads || 1 }
       reportBrowserKokoroProgress(`${message.backend === 'webgpu' ? 'Native WebGPU' : 'WASM'} ${message.dtype || '모델'}을 초기화합니다…`, { phase: 'initializing', percent: 0, backend: message.backend })
-      recordTTSDiagnostic({ source: 'app', stage: 'backend-info', message: `${message.backend} · ${message.runtimeVariant} · ${message.dtype}`, requestId: message.requestId, backend: message.backend, detail: { runtime: message.runtime, ortVersion: message.ortVersion } })
+      recordTTSDiagnostic({ source: 'app', stage: 'backend-info', message: `${message.backend} · ${message.runtimeVariant} · ${message.dtype} · ${message.threads || 1} threads`, requestId: message.requestId, backend: message.backend, detail: { runtime: message.runtime, ortVersion: message.ortVersion, crossOriginIsolated: self.crossOriginIsolated } })
       return
     }
     if (!request) return
@@ -324,7 +407,10 @@ function getBrowserKokoroWorker() {
     else if (message.type === 'cancelled') request.reject(new DOMException('Audio request cancelled', 'AbortError'))
     else request.reject(new Error(message.message || 'Kokoro Worker에서 음성을 만들지 못했습니다.'))
   }
-  worker.onerror = () => failWorker(new Error('Kokoro 음성 Worker가 중단됐습니다.'))
+  worker.onerror = (event) => {
+    const location = event.filename ? ` (${event.filename.split('/').pop()}:${event.lineno || 0}:${event.colno || 0})` : ''
+    failWorker(new Error(`${event.message || 'Kokoro 음성 Worker가 중단됐습니다.'}${location}`))
+  }
   browserKokoroWorker = worker
   return worker
 }
@@ -450,7 +536,7 @@ function speechKey(text: string, profile: VoiceProfile) {
 }
 
 async function synthesizeSpeech(text: string, profile: VoiceProfile, onProgress: ProgressHandler, signal: AbortSignal, onChunk?: (blob: Blob, index: number) => void) {
-  const parts = chunkSpeechParts(splitSpeakers(text))
+  const parts = chunkSpeechParts(splitSpeakers(text), !hasLocalTtsServer() && isIOSBrowser() && resolveTTSBackend() === 'wasm' ? 42 : 120)
   if (!hasLocalTtsServer()) {
     return generateBrowserSpeech(parts.map((part) => ({
       text: part.text,
@@ -541,7 +627,7 @@ function playElement(audio: HTMLAudioElement, generation: number, signal: AbortS
   })
 }
 
-async function speakWithKokoro(text: string, profile: VoiceProfile, onProgress: ProgressHandler, controller: AbortController, generation: number, maxWaitMs?: number) {
+async function speakWithKokoro(text: string, profile: VoiceProfile, onProgress: ProgressHandler, controller: AbortController, generation: number, maxWaitMs?: number, playbackAudio?: HTMLAudioElement | null) {
   const generationController = new AbortController()
   const cancelGeneration = () => generationController.abort()
   controller.signal.addEventListener('abort', cancelGeneration, { once: true })
@@ -557,7 +643,11 @@ async function speakWithKokoro(text: string, profile: VoiceProfile, onProgress: 
       if (controller.signal.aborted || generation !== playbackGeneration) return
       const url = URL.createObjectURL(blob)
       activeUrls.push(url)
-      await playElement(new Audio(url), generation, controller.signal, onProgress)
+      const audio = playbackAudio || new Audio()
+      audio.src = url
+      audio.volume = 1
+      audio.load()
+      await playElement(audio, generation, controller.signal, onProgress)
     })
   }
   const speech = getSpeech(text, profile, onProgress, generationController, 'playback', queueChunk)
@@ -587,6 +677,7 @@ async function speakWithKokoro(text: string, profile: VoiceProfile, onProgress: 
 
 export async function playTTS(text: string, profileId: VoiceProfileId, onProgress: ProgressHandler, options: PlayOptions = {}) {
   stopPlayback()
+  const primedAudio = primeIOSAudioElement()
   const controller = new AbortController()
   activePlaybackController = controller
   const profile = getVoiceProfile(profileId)
@@ -597,7 +688,7 @@ export async function playTTS(text: string, profileId: VoiceProfileId, onProgres
       if (controller.signal.aborted || generation !== playbackGeneration) return 'cancelled'
     }
     else {
-      const played = await speakWithKokoro(text, profile, onProgress, controller, generation, options.maxWaitMs)
+      const played = await speakWithKokoro(text, profile, onProgress, controller, generation, options.maxWaitMs, primedAudio)
       if (controller.signal.aborted || generation !== playbackGeneration) return 'cancelled'
       if (played === false) {
         onProgress('AI 음성은 서버에서 계속 준비합니다. 이번에는 기기 음성으로 바로 재생합니다…')
@@ -611,7 +702,9 @@ export async function playTTS(text: string, profileId: VoiceProfileId, onProgres
   } catch (error) {
     if (generation !== playbackGeneration || controller.signal.aborted) return 'cancelled'
     if (profile.id !== 'system') {
-      onProgress('AI 음성을 사용할 수 없어 시스템 음성으로 전환합니다…')
+      const message = error instanceof Error ? error.message : String(error)
+      recordTTSDiagnostic({ source: 'app', stage: 'playback-error', message, backend: activeBrowserBackend || undefined })
+      onProgress(`AI 음성을 사용할 수 없어 시스템 음성으로 전환합니다… (${message})`)
       await speakWithSystem(text, onProgress, controller.signal, generation)
       if (controller.signal.aborted || generation !== playbackGeneration) return 'cancelled'
       return 'fallback'

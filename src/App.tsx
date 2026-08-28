@@ -5,7 +5,7 @@ import ExamData from './ExamData'
 import { buildFullPracticeSetFrom, buildSectionPracticeFrom, buildTaskPracticeFrom, countBySectionFrom, getActiveExamPackInfo, getActivePracticeItems, getAvailablePracticeItems, getPracticeTaskTypesFrom } from './examPack'
 import { displayAnswer, getSessionStats, isCorrect } from './review'
 import { finishSession, loadActive, loadExcludedItemIds, loadHistory, saveActive, setSessionRandomEligibility } from './storage'
-import { getVoiceProfile, hasLocalTtsServer, playTTS, prepareExamTTS, stopAllTTS, stopTTS, type TTSProgressDetail } from './tts'
+import { getVoiceProfile, hasLocalTtsServer, playTTS, prepareExamTTS, primeTTSPlayback, stopAllTTS, stopTTS, type TTSProgressDetail } from './tts'
 import type { Answer, BaseItem, PracticeMode, SavedSession, Section } from './types'
 
 const Vocabulary = lazy(() => import('./Vocabulary'))
@@ -52,14 +52,18 @@ function routeUrl(screen: Screen) {
 }
 
 function App() {
+  const debugScreen = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+    ? new URLSearchParams(window.location.search).get('debug-screen') as Screen | null
+    : null
   const initialNavigation = isAppNavigationState(window.history.state) ? window.history.state : null
   const initialSession = loadActive()
   const initialResult = initialNavigation?.resultId ? loadHistory().find((entry) => entry.id === initialNavigation.resultId) || null : null
-  const initialScreen = initialNavigation?.screen === 'result' && !initialResult
+  const restoredScreen = initialNavigation?.screen === 'result' && !initialResult
     ? 'home'
     : (initialNavigation?.screen === 'intro' || initialNavigation?.screen === 'test') && !initialSession
       ? 'home'
       : initialNavigation?.screen || 'home'
+  const initialScreen = debugScreen && ['home', 'vocabulary', 'settings', 'voice-settings', 'exam-data'].includes(debugScreen) ? debugScreen : restoredScreen
   const [screen, setScreen] = useState<Screen>(initialScreen)
   const [items, setItems] = useState<BaseItem[]>(() => itemsForSession(initialResult || initialSession).length ? itemsForSession(initialResult || initialSession) : PRACTICE_ITEMS)
   const [session, setSession] = useState<SavedSession | null>(initialSession)
@@ -204,7 +208,8 @@ function TaskSelect({ section, onBack, onSelectAll, onSelectTask }: { section: S
   return <div className="simple-page"><header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 섹션으로</button></header><main className="select-main task-select-main"><span className="section-label">{SECTION_META[section].label}</span><h1>연습할 유형을 고르세요.</h1><p>한 유형만 반복하거나, 기존처럼 {SECTION_META[section].label}의 여러 유형을 섞어서 연습할 수 있습니다.</p><button className="task-all" onClick={onSelectAll}><span><strong>전체 유형 섞기</strong><small>{SECTION_META[section].tasks}</small></span><em>랜덤 후보 {countBySectionFrom(PRACTICE_ITEMS, section, excludedIds)}문항</em><ArrowIcon /></button><div className="task-list">{tasks.map((task, index) => <button key={task.title} onClick={() => onSelectTask(task.title, task.label)}><span className="step-number">{String(index + 1).padStart(2, '0')}</span><span><strong>{task.label}</strong><small>{task.description}</small></span><em>후보 {task.candidateCount} · 한 세트 {task.setSize}</em><ArrowIcon /></button>)}</div></main></div>
 }
 
-function Intro({ items, mode, practiceLabel, onBack, onStart }: { items: BaseItem[]; mode: PracticeMode; practiceLabel?: string; onBack: () => void; onStart: () => void }) {
+function Intro({ items, mode, practiceLabel, onBack, onStart: navigateToTest }: { items: BaseItem[]; mode: PracticeMode; practiceLabel?: string; onBack: () => void; onStart: () => void }) {
+  const onStart = () => { primeTTSPlayback(); navigateToTest() }
   const first = items[0]
   const isFull = new Set(items.map((item) => item.section)).size > 1
   const localTts = hasLocalTtsServer()

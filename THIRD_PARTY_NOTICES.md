@@ -31,6 +31,8 @@ The public repository does not include downloaded dictionary databases, research
 
 The repository does not redistribute Kokoro model weights. They are fetched from the model host at runtime under the model's own license. Browser builds copy the installed ONNX Runtime Web non-JSEP WASM runtime into the deployment during `npm run build`; its MIT license remains governed by the installed package notice.
 
+Kokoro uses the Apache-2.0 `phonemizer` 1.2.1 package for eSpeak-NG phoneme conversion. The build replaces one bundled `ReadableStream` async-iterator loop with the standards-compatible `getReader()` API to avoid an iOS WebKit initialization stall; the package's license and attribution are unchanged. GitHub Pages also includes the MIT-licensed `coi-serviceworker` 0.1.7 script so supported browsers can enable `SharedArrayBuffer` and parallel ONNX WASM without a custom server.
+
 ## JavaScript packages
 
-React, React DOM, Vite, Vitest and ONNX Runtime Web are MIT-licensed. `kokoro-js` and its Transformers runtime are Apache-2.0 licensed. Exact package versions and transitive dependencies are recorded in `package-lock.json`; installed package contents retain their own licenses and are not checked into this repository.
+React, React DOM, Vite, Vitest, ONNX Runtime Web and `coi-serviceworker` are MIT-licensed. `kokoro-js`, `phonemizer` and the Transformers runtime are Apache-2.0 licensed. Exact package versions and transitive dependencies are recorded in `package-lock.json`; installed package contents retain their own licenses and are not checked into this repository.

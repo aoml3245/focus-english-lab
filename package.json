@@ -1,7 +1,7 @@
 {
   "name": "focus-english-lab",
   "private": true,
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Independent browser-based English proficiency practice with original questions, local AI coaching, and optional in-browser TTS.",
   "license": "MIT",
   "repository": {
@@ -10,7 +10,7 @@
   },
   "type": "module",
   "scripts": {
-    "prepare:ort": "node scripts/copy-ort-assets.mjs",
+    "prepare:ort": "node scripts/patch-phonemizer.mjs && node scripts/copy-ort-assets.mjs",
     "predev": "npm run prepare:ort",
     "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "tts:download": "node server/download-tts-model.mjs",
@@ -24,6 +24,7 @@
   "dependencies": {
     "@huggingface/transformers": "4.2.0",
     "@vitejs/plugin-react": "latest",
+    "coi-serviceworker": "0.1.7",
     "kokoro-js": "^1.2.1",
     "react": "latest",
     "react-dom": "latest",
@@ -37,6 +38,7 @@
   },
   "overrides": {
     "adm-zip": "0.6.0",
+    "onnxruntime-web": "1.29.0",
     "sharp": "^0.35.4",
     "kokoro-js": {
       "@huggingface/transformers": "4.2.0"
