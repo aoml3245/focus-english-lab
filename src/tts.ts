@@ -1,4 +1,5 @@
 import { cacheSpeech, readCachedSpeech } from './ttsAudioCache'
+import { recordTTSDiagnostic } from './ttsDiagnostics'
 
 export type VoiceProfileId = 'toefl-balanced' | 'us-female' | 'us-male' | 'uk-female' | 'uk-male' | 'system'
 
@@ -172,6 +173,7 @@ function terminateActiveBrowserWork() {
 }
 
 export function stopTTS() {
+  recordTTSDiagnostic({ source: 'app', stage: 'stop', message: '현재 TTS 재생과 추론을 중지합니다.' })
   stopPlayback()
   terminateActiveBrowserWork()
 }
@@ -226,6 +228,7 @@ async function loadBrowserKokoro(onProgress: ProgressHandler, signal?: AbortSign
   try {
     if (!browserKokoroPromise) {
       const requestedBackend = resolveTTSBackend()
+      recordTTSDiagnostic({ source: 'app', stage: 'backend-selected', message: `${requestedBackend} 백엔드를 요청했습니다.`, backend: requestedBackend, detail: { preference: loadTTSBackendPreference(), webgpuAdvertised: browserSupportsWebGPU() } })
       reportBrowserKokoroProgress(`${requestedBackend === 'webgpu' ? 'WebGPU(Metal)' : 'WASM'}용 Kokoro 82M을 확인합니다…`, { phase: 'checking', percent: 0, backend: requestedBackend })
       browserKokoroPromise = (async () => {
         const cachedBeforeLoad = await getBrowserKokoroCacheState() === 'available'
@@ -233,6 +236,7 @@ async function loadBrowserKokoro(onProgress: ProgressHandler, signal?: AbortSign
         const initializeBackend = async (backend: 'webgpu' | 'wasm') => {
           const worker = getBrowserKokoroWorker()
           const requestId = `init-${++workerRequestSequence}`
+          recordTTSDiagnostic({ source: 'app', stage: 'init-posted', message: `${backend} 초기화 요청을 Worker에 보냈습니다.`, requestId, backend })
           await new Promise<void>((resolve, reject) => {
             workerRequests.set(requestId, { chunks: [], resolve: () => resolve(), reject })
             worker.postMessage({
@@ -247,6 +251,7 @@ async function loadBrowserKokoro(onProgress: ProgressHandler, signal?: AbortSign
         catch (error) {
           if (requestedBackend !== 'webgpu') throw error
           lastBrowserBackendFallbackReason = error instanceof Error ? error.message : String(error)
+          recordTTSDiagnostic({ source: 'app', stage: 'backend-fallback', message: lastBrowserBackendFallbackReason, backend: 'wasm', detail: { requestedBackend } })
           browserKokoroWorker?.terminate()
           browserKokoroWorker = null
           activeBrowserBackend = null
@@ -267,6 +272,7 @@ async function loadBrowserKokoro(onProgress: ProgressHandler, signal?: AbortSign
 }
 
 function failWorker(error: Error) {
+  recordTTSDiagnostic({ source: 'app', stage: 'worker-terminated', message: error.message, detail: { pendingRequests: workerRequests.size } })
   workerRequests.forEach((request) => request.reject(error))
   workerRequests.clear()
   browserKokoroWorker?.terminate()
@@ -279,9 +285,13 @@ function failWorker(error: Error) {
 function getBrowserKokoroWorker() {
   if (browserKokoroWorker) return browserKokoroWorker
   const worker = new Worker(new URL('./tts.worker.ts', import.meta.url), { type: 'module', name: 'focus-english-kokoro' })
-  worker.onmessage = (event: MessageEvent<{ type: string; requestId: string; blob?: Blob; index?: number; message?: string; percent?: number; loadedBytes?: number; totalBytes?: number; file?: string; backend?: 'webgpu' | 'wasm'; dtype?: string; runtime?: 'native-webgpu-ep' | 'wasm'; runtimeVariant?: 'standard' | 'asyncify'; ortVersion?: string }>) => {
+  worker.onmessage = (event: MessageEvent<{ type: string; requestId: string; blob?: Blob; index?: number; message?: string; stage?: string; elapsedMs?: number; detail?: Record<string, unknown>; percent?: number; loadedBytes?: number; totalBytes?: number; file?: string; backend?: 'webgpu' | 'wasm'; dtype?: string; runtime?: 'native-webgpu-ep' | 'wasm'; runtimeVariant?: 'standard' | 'asyncify'; ortVersion?: string }>) => {
     const message = event.data
     const request = workerRequests.get(message.requestId)
+    if (message.type === 'diagnostic') {
+      recordTTSDiagnostic({ source: 'worker', stage: message.stage || 'worker-event', message: message.message || 'Worker 진단 이벤트', requestId: message.requestId, backend: message.backend, elapsedMs: message.elapsedMs, detail: message.detail })
+      return
+    }
     if (message.type === 'progress') {
       const cached = lastBrowserKokoroProgress?.detail.cached === true
       const phase = cached ? 'loading-cache' : 'downloading'
@@ -296,6 +306,7 @@ function getBrowserKokoroWorker() {
     if (message.type === 'backend-info') {
       if (message.runtime && message.runtimeVariant && message.ortVersion) activeBrowserRuntimeInfo = { runtime: message.runtime, runtimeVariant: message.runtimeVariant, ortVersion: message.ortVersion, dtype: message.dtype || 'unknown' }
       reportBrowserKokoroProgress(`${message.backend === 'webgpu' ? 'Native WebGPU' : 'WASM'} ${message.dtype || '모델'}을 초기화합니다…`, { phase: 'initializing', percent: 0, backend: message.backend })
+      recordTTSDiagnostic({ source: 'app', stage: 'backend-info', message: `${message.backend} · ${message.runtimeVariant} · ${message.dtype}`, requestId: message.requestId, backend: message.backend, detail: { runtime: message.runtime, ortVersion: message.ortVersion } })
       return
     }
     if (!request) return
@@ -323,13 +334,19 @@ async function generateBrowserSpeech(parts: BrowserSpeechPart[], onProgress: Pro
   if (signal.aborted) throw new DOMException('Audio request cancelled', 'AbortError')
   const worker = getBrowserKokoroWorker()
   const requestId = `speech-${++workerRequestSequence}`
+  const requestStartedAt = performance.now()
+  recordTTSDiagnostic({ source: 'app', stage: 'generation-posted', message: `Worker에 ${parts.length}개 텍스트 조각을 보냈습니다.`, requestId, backend: activeBrowserBackend || undefined, detail: { characters: parts.reduce((sum, part) => sum + part.text.length, 0) } })
   return new Promise<Blob[]>((resolve, reject) => {
+    const waitingTimer = window.setInterval(() => {
+      recordTTSDiagnostic({ source: 'app', stage: 'generation-waiting', message: `첫 오디오 조각을 ${Math.round((performance.now() - requestStartedAt) / 1000)}초째 기다리고 있습니다.`, requestId, backend: activeBrowserBackend || undefined })
+    }, 10_000)
+    const finish = <T,>(callback: (value: T) => void) => (value: T) => { window.clearInterval(waitingTimer); callback(value) }
     const abort = () => worker.postMessage({ type: 'cancel', requestId })
     signal.addEventListener('abort', abort, { once: true })
     workerRequests.set(requestId, {
       chunks: [],
-      resolve,
-      reject,
+      resolve: finish(resolve),
+      reject: finish(reject),
       onChunk: (blob, index) => {
         onProgress(`${activeBrowserBackend === 'webgpu' ? 'WebGPU(Metal)' : 'WASM'} 음성 스트리밍 중… ${index + 1}`, { phase: 'generating', cached: true, backend: activeBrowserBackend || undefined })
         onChunk?.(blob, index)

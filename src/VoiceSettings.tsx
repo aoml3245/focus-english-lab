@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { ArrowIcon, Brand } from './components'
 import { browserSupportsWebGPU, getActiveBrowserTTSBackend, getBrowserKokoroCacheState, getBrowserTTSFallbackReason, getBrowserTTSRuntimeInfo, getVoiceProfile, hasLocalTtsServer, loadTTSBackendPreference, loadVoiceProfileId, playTTS, resolveTTSBackend, saveTTSBackendPreference, saveVoiceProfileId, stopTTS, VOICE_PROFILES, type TTSBackendPreference, type TTSProgressDetail, type VoiceProfileId } from './tts'
+import { APP_VERSION } from './version'
+import { clearTTSDiagnostics, formatTTSDiagnostics, getTTSDiagnostics, subscribeTTSDiagnostics, type TTSDiagnosticEvent } from './ttsDiagnostics'
 
 const PREVIEW_TEXT = 'Student: I am trying to understand the new research schedule. Advisor: Let us review the evidence together before you make a decision.'
 
@@ -13,8 +15,11 @@ export default function VoiceSettings({ onBack }: { onBack: () => void }) {
   const [modelProgress, setModelProgress] = useState<TTSProgressDetail | null>(null)
   const [backendPreference, setBackendPreference] = useState<TTSBackendPreference>(loadTTSBackendPreference)
   const [firstAudioMs, setFirstAudioMs] = useState<number | null>(null)
+  const [diagnostics, setDiagnostics] = useState<TTSDiagnosticEvent[]>(getTTSDiagnostics)
+  const [diagnosticStatus, setDiagnosticStatus] = useState('')
   const runtimeInfo = getBrowserTTSRuntimeInfo()
   useEffect(() => () => stopTTS(), [])
+  useEffect(() => subscribeTTSDiagnostics(setDiagnostics), [])
   useEffect(() => {
     if (localTts) return
     let active = true
@@ -67,6 +72,29 @@ export default function VoiceSettings({ onBack }: { onBack: () => void }) {
     setStatus(`${preference === 'auto' ? '자동' : preference === 'webgpu' ? 'WebGPU(Metal)' : 'WASM 호환'} 모드로 저장했습니다. 다음 미리 듣기부터 적용됩니다.`)
   }
 
+  const diagnosticContext = () => ({
+    appVersion: APP_VERSION,
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    secureContext: window.isSecureContext,
+    webgpuAdvertised: browserSupportsWebGPU(),
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    deviceMemory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 'unknown',
+    backendPreference,
+    resolvedBackend: resolveTTSBackend(),
+    activeBackend: getActiveBrowserTTSBackend(),
+    runtimeInfo: getBrowserTTSRuntimeInfo(),
+    fallbackReason: getBrowserTTSFallbackReason(),
+    cacheState,
+  })
+
+  const copyDiagnostics = async () => {
+    try {
+      await navigator.clipboard.writeText(formatTTSDiagnostics(diagnosticContext()))
+      setDiagnosticStatus('진단 로그를 클립보드에 복사했습니다.')
+    } catch { setDiagnosticStatus('클립보드 복사에 실패했습니다. 아래 로그를 길게 눌러 복사해 주세요.') }
+  }
+
   return <div className="voice-page">
     <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 설정으로</button></header>
     <main>
@@ -82,6 +110,26 @@ export default function VoiceSettings({ onBack }: { onBack: () => void }) {
         <div className={modelProgress && !['complete', 'ready', 'playing'].includes(modelProgress.phase) ? 'voice-progress voice-progress--active' : 'voice-progress'} role="progressbar" aria-label="Kokoro 모델 준비 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={modelProgress?.percent ?? (cacheState === 'available' ? 100 : 0)}><span style={{ width: `${modelProgress?.percent ?? (cacheState === 'available' ? 100 : 0)}%` }} /></div>
         <div className="voice-download-detail"><span>{modelProgress ? status : cacheState === 'available' ? '모델 파일은 브라우저의 transformers-cache에 보관되어 다음 방문에도 재사용됩니다.' : 'AI 음성의 미리 듣기를 누르면 실제 다운로드 퍼센트와 전송량이 여기에 표시됩니다.'}</span>{modelProgress?.loadedBytes !== undefined && modelProgress.totalBytes !== undefined && <strong>{(modelProgress.loadedBytes / 1024 / 1024).toFixed(1)} / {(modelProgress.totalBytes / 1024 / 1024).toFixed(1)} MB{modelProgress.file ? ` · ${modelProgress.file}` : ''}</strong>}</div>
       </section>}
+      {!localTts && <details className="tts-diagnostics" open>
+        <summary><span>임시 TTS 진단 도구</span><strong>{diagnostics.length ? `${diagnostics.length}개 이벤트` : '대기 중'}</strong></summary>
+        <div className="tts-diagnostics__body">
+          <dl>
+            <div><dt>앱</dt><dd>v{APP_VERSION}</dd></div>
+            <div><dt>선택 / 실제</dt><dd>{resolveTTSBackend()} / {getActiveBrowserTTSBackend() || '시작 전'}</dd></div>
+            <div><dt>런타임</dt><dd>{runtimeInfo ? `${runtimeInfo.runtimeVariant} · ${runtimeInfo.dtype}` : '확인 전'}</dd></div>
+            <div><dt>WebGPU</dt><dd>{browserSupportsWebGPU() ? '브라우저 노출됨' : '미지원'}</dd></div>
+          </dl>
+          <div className="tts-diagnostics__actions">
+            <button className="button button--secondary" onClick={() => { stopTTS(); setStatus('현재 음성 작업을 중지했습니다.') }}>현재 작업 중지</button>
+            <button className="button button--secondary" onClick={copyDiagnostics}>로그 복사</button>
+            <button className="text-button" onClick={() => { clearTTSDiagnostics(); setDiagnosticStatus('진단 로그를 비웠습니다.') }}>로그 지우기</button>
+          </div>
+          {diagnosticStatus && <p>{diagnosticStatus}</p>}
+          <ol aria-label="TTS 단계별 진단 로그">
+            {diagnostics.length ? diagnostics.slice(-30).reverse().map((event) => <li key={event.id}><time>+{(event.elapsedMs / 1000).toFixed(1)}s</time><code>{event.source}:{event.stage}</code><span>{event.message}</span></li>) : <li><span>미리 듣기를 누르면 모델 확인부터 첫 오디오 조각까지 단계별 시간이 표시됩니다.</span></li>}
+          </ol>
+        </div>
+      </details>}
       <section className="voice-list" aria-label="사용할 음성 선택">
         {VOICE_PROFILES.map((profile) => <article className={selected === profile.id ? 'voice-row voice-row--selected' : 'voice-row'} key={profile.id}>
           <div className="voice-radio" aria-hidden="true"><span /></div>
