@@ -5,7 +5,7 @@ import ExamData from './ExamData'
 import { buildFullPracticeSetFrom, buildSectionPracticeFrom, buildTaskPracticeFrom, countBySectionFrom, getActiveExamPackInfo, getActivePracticeItems, getAvailablePracticeItems, getPracticeTaskTypesFrom } from './examPack'
 import { displayAnswer, getSessionStats, isCorrect } from './review'
 import { finishSession, loadActive, loadExcludedItemIds, loadHistory, saveActive, setSessionRandomEligibility } from './storage'
-import { getVoiceProfile, hasLocalTtsServer, playTTS, prepareExamTTS, primeTTSPlayback, stopAllTTS, stopTTS, type TTSProgressDetail } from './tts'
+import { getVoiceProfile, hasLocalTtsServer, playTTS, prepareExamTTS, primeTTSPlayback, stopAllTTS, stopTTS, subscribeExamTTSPrecache, type TTSProgressDetail } from './tts'
 import type { Answer, BaseItem, PracticeMode, SavedSession, Section } from './types'
 
 const Vocabulary = lazy(() => import('./Vocabulary'))
@@ -220,14 +220,19 @@ function Intro({ items, mode, practiceLabel, onBack, onStart: navigateToTest }: 
   const examAudioTexts = items.map((item) => item.audioText || '').filter(Boolean)
   useEffect(() => {
     let active = true
+    const unsubscribe = subscribeExamTTSPrecache((state) => {
+      if (!active || state.status === 'idle') return
+      if (state.status === 'error') setPreparation({ phase: 'error', message: state.message, progress: { phase: 'generating', percent: state.percent } })
+      else setPreparation({ phase: state.status === 'ready' ? 'ready' : 'preparing', message: state.message, progress: { phase: state.status === 'ready' ? 'ready' : 'generating', percent: state.percent, cached: state.status === 'ready' } })
+    })
     setPreparation({ phase: 'preparing', message: '음성 준비를 시작합니다…' })
     prepareExamTTS(examAudioTexts, profile.id, (message, progress) => { if (active) setPreparation((current) => ({ ...current, message, progress: progress || current.progress })) })
       .then((result) => {
         if (!active) return
-        setPreparation({ phase: result.fallback ? 'fallback' : result.engine === 'system' ? 'system' : 'ready', message: result.fallback ? 'AI 엔진 대신 기기 영어 음성이 준비됐습니다.' : result.engine === 'system' ? '선택한 기기 영어 음성이 준비됐습니다. 첫 듣기 문항부터 바로 재생됩니다.' : localTts ? '로컬 AI 서버 준비 완료 · 시험 음성은 자동으로 캐시됩니다.' : result.backend === 'webgpu' ? 'Kokoro 82M WebGPU(Metal) 준비 완료 · GPU에서 음성을 생성합니다.' : 'Kokoro 82M q8 WASM 준비 완료 · 호환 모드로 음성을 생성합니다.', progress: result.engine === 'kokoro' ? { phase: 'ready', percent: 100, cached: true, backend: result.backend === 'webgpu' ? 'webgpu' : result.backend === 'wasm' ? 'wasm' : undefined } : undefined })
+        if (result.engine !== 'kokoro') setPreparation({ phase: result.fallback ? 'fallback' : 'system', message: result.fallback ? 'AI 엔진 대신 기기 영어 음성이 준비됐습니다.' : '선택한 기기 영어 음성이 준비됐습니다. 첫 듣기 문항부터 바로 재생됩니다.' })
       })
       .catch((error: unknown) => { if (active) setPreparation({ phase: 'error', message: error instanceof Error ? error.message : '음성 엔진을 준비하지 못했습니다.' }) })
-    return () => { active = false; stopTTS() }
+    return () => { active = false; unsubscribe(); stopTTS() }
   }, [attempt, items, localTts, profile.id])
   const playCheck = async () => {
     setPreview('playing')

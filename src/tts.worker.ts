@@ -180,6 +180,7 @@ async function generate(message: GenerateMessage) {
     let sampleRate = 24_000
     let segmentCount = 0
     const renderedText: string[] = []
+    post('generation-progress', message.requestId, { completedParts: 0, totalParts: message.parts.length, percent: 0 })
     for (let partIndex = 0; partIndex < message.parts.length; partIndex += 1) {
       const part = message.parts[partIndex]
       if (cancelledRequests.has(message.requestId)) break
@@ -206,6 +207,7 @@ async function generate(message: GenerateMessage) {
       phonemizerSlowTimer = null
       activePartRequestId = null
       activePartStartedAt = 0
+      post('generation-progress', message.requestId, { completedParts: partIndex + 1, totalParts: message.parts.length, percent: Math.round((partIndex + 1) / message.parts.length * 100) })
     }
     if (cancelledRequests.has(message.requestId)) {
       diagnose(message.requestId, 'generation-cancelled', '음성 생성 취소를 반영했습니다.')

@@ -32,6 +32,15 @@ export type TTSProgressDetail = {
   backend?: 'webgpu' | 'wasm'
 }
 
+export type ExamTTSPrecacheState = {
+  status: 'idle' | 'preparing' | 'ready' | 'error'
+  completed: number
+  total: number
+  current: number
+  percent: number
+  message: string
+}
+
 export type TTSBackendPreference = 'auto' | 'webgpu' | 'wasm'
 export type TTSRuntimeInfo = { runtime: 'native-webgpu-ep' | 'wasm'; runtimeVariant: 'standard' | 'asyncify'; ortVersion: string; dtype: string; threads: number }
 
@@ -57,6 +66,7 @@ type WorkerRequest = {
   chunks: Blob[]
   resolve: (blobs: Blob[]) => void
   reject: (error: Error) => void
+  onProgress?: ProgressHandler
   onChunk?: (blob: Blob, index: number) => void
   abort?: () => void
 }
@@ -70,6 +80,8 @@ const MAX_CACHED_SPEECHES = 24
 let examPrecacheGeneration = 0
 let activePlaybackController: AbortController | null = null
 let examPrecacheController: AbortController | null = null
+let examPrecacheState: ExamTTSPrecacheState = { status: 'idle', completed: 0, total: 0, current: 0, percent: 0, message: '' }
+const examPrecacheListeners = new Set<(state: ExamTTSPrecacheState) => void>()
 const pendingPlaybackRequests = new Set<AbortController>()
 const pendingSpeech = new Map<string, Promise<Blob[]>>()
 let browserKokoroWorker: Worker | null = null
@@ -255,9 +267,8 @@ function cancelActiveBrowserWork() {
 }
 
 export function stopTTS() {
-  recordTTSDiagnostic({ source: 'app', stage: 'stop', message: '현재 TTS 재생과 추론을 중지합니다.' })
+  recordTTSDiagnostic({ source: 'app', stage: 'stop', message: '현재 TTS 재생 요청을 중지합니다.' })
   stopPlayback()
-  cancelActiveBrowserWork()
 }
 
 export function stopAllTTS() {
@@ -266,6 +277,22 @@ export function stopAllTTS() {
   examPrecacheController?.abort()
   examPrecacheController = null
   cancelActiveBrowserWork()
+  reportExamPrecache({ status: 'idle', completed: 0, total: 0, current: 0, percent: 0, message: '' })
+}
+
+function reportExamPrecache(state: ExamTTSPrecacheState) {
+  examPrecacheState = state
+  examPrecacheListeners.forEach((listener) => listener(state))
+}
+
+export function getExamTTSPrecacheState() {
+  return examPrecacheState
+}
+
+export function subscribeExamTTSPrecache(listener: (state: ExamTTSPrecacheState) => void) {
+  examPrecacheListeners.add(listener)
+  listener(examPrecacheState)
+  return () => { examPrecacheListeners.delete(listener) }
 }
 
 function splitSpeakers(text: string) {
@@ -368,7 +395,7 @@ function failWorker(error: Error) {
 function getBrowserKokoroWorker() {
   if (browserKokoroWorker) return browserKokoroWorker
   const worker = new Worker(new URL('./tts.worker.ts', import.meta.url), { type: 'module', name: 'focus-english-kokoro' })
-  worker.onmessage = (event: MessageEvent<{ type: string; requestId: string; blob?: Blob; index?: number; message?: string; stage?: string; elapsedMs?: number; detail?: Record<string, unknown>; percent?: number; loadedBytes?: number; totalBytes?: number; file?: string; backend?: 'webgpu' | 'wasm'; dtype?: string; runtime?: 'native-webgpu-ep' | 'wasm'; runtimeVariant?: 'standard' | 'asyncify'; ortVersion?: string; threads?: number }>) => {
+  worker.onmessage = (event: MessageEvent<{ type: string; requestId: string; blob?: Blob; index?: number; message?: string; stage?: string; elapsedMs?: number; detail?: Record<string, unknown>; percent?: number; completedParts?: number; totalParts?: number; loadedBytes?: number; totalBytes?: number; file?: string; backend?: 'webgpu' | 'wasm'; dtype?: string; runtime?: 'native-webgpu-ep' | 'wasm'; runtimeVariant?: 'standard' | 'asyncify'; ortVersion?: string; threads?: number }>) => {
     const message = event.data
     const request = workerRequests.get(message.requestId)
     if (message.type === 'diagnostic') {
@@ -393,6 +420,10 @@ function getBrowserKokoroWorker() {
       return
     }
     if (!request) return
+    if (message.type === 'generation-progress') {
+      request.onProgress?.(`연속 음성 변환 중… ${message.completedParts ?? 0}/${message.totalParts ?? 0}`, { phase: 'generating', percent: message.percent, backend: activeBrowserBackend || undefined })
+      return
+    }
     if (message.type === 'chunk' && message.blob) {
       request.chunks.push(message.blob)
       request.onChunk?.(message.blob, message.index ?? request.chunks.length - 1)
@@ -433,6 +464,7 @@ async function generateBrowserSpeech(parts: BrowserSpeechPart[], onProgress: Pro
       chunks: [],
       resolve: finish(resolve),
       reject: finish(reject),
+      onProgress,
       onChunk: (blob, index) => {
         onProgress(`${activeBrowserBackend === 'webgpu' ? 'WebGPU(Metal)' : 'WASM'} 연속 음성을 완성했습니다.`, { phase: 'generating', cached: true, backend: activeBrowserBackend || undefined })
         onChunk?.(blob, index)
@@ -631,17 +663,31 @@ export async function prepareExamTTS(texts: string[], profileId: VoiceProfileId,
   examPrecacheController = controller
   const result = await prepareTTS(profileId, onProgress, controller.signal)
   if (controller.signal.aborted) throw new DOMException('Audio preparation cancelled', 'AbortError')
-  if (result.engine !== 'kokoro') return result
+  if (result.engine !== 'kokoro') {
+    reportExamPrecache({ status: 'ready', completed: 0, total: 0, current: 0, percent: 100, message: '기기 영어 음성이 준비됐습니다.' })
+    return result
+  }
   const profile = getVoiceProfile(profileId)
   const uniqueTexts = [...new Set(texts.filter(Boolean))]
-  const precacheTexts = hasLocalTtsServer() ? uniqueTexts : uniqueTexts.slice(0, 2)
+  const precacheTexts = uniqueTexts
   const generation = ++examPrecacheGeneration
+  reportExamPrecache({ status: precacheTexts.length ? 'preparing' : 'ready', completed: 0, total: precacheTexts.length, current: 0, percent: precacheTexts.length ? 0 : 100, message: precacheTexts.length ? `시험 음성 0/${precacheTexts.length} 변환 준비` : '변환할 시험 음성이 없습니다.' })
   void (async () => {
     for (let index = 0; index < precacheTexts.length; index += 1) {
       if (generation !== examPrecacheGeneration || controller.signal.aborted) return
-      await getSpeech(precacheTexts[index], profile, () => undefined, controller, 'precache')
+      const total = precacheTexts.length
+      reportExamPrecache({ status: 'preparing', completed: index, total, current: index + 1, percent: Math.round(index / total * 100), message: `시험 음성 ${index + 1}/${total} 변환 중` })
+      await getSpeech(precacheTexts[index], profile, (_message, detail) => {
+        if (generation !== examPrecacheGeneration || controller.signal.aborted) return
+        const itemProgress = detail?.phase === 'generating' && detail.percent !== undefined ? detail.percent / 100 : 0
+        reportExamPrecache({ status: 'preparing', completed: index, total, current: index + 1, percent: Math.min(99, Math.round((index + itemProgress) / total * 100)), message: `시험 음성 ${index + 1}/${total} 변환 중` })
+      }, controller, 'precache')
+      reportExamPrecache({ status: index + 1 === total ? 'ready' : 'preparing', completed: index + 1, total, current: Math.min(index + 2, total), percent: Math.round((index + 1) / total * 100), message: index + 1 === total ? `시험 음성 ${total}개를 모두 준비했습니다.` : `시험 음성 ${index + 1}/${total} 준비 완료` })
     }
-  })().catch(() => undefined).finally(() => { if (examPrecacheController === controller) examPrecacheController = null })
+  })().catch((error: unknown) => {
+    if (generation !== examPrecacheGeneration || controller.signal.aborted) return
+    reportExamPrecache({ ...examPrecacheState, status: 'error', message: error instanceof Error ? error.message : '시험 음성을 미리 변환하지 못했습니다.' })
+  }).finally(() => { if (examPrecacheController === controller) examPrecacheController = null })
   return { ...result, clips: precacheTexts.length }
 }
 

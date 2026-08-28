@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { loadVoiceProfileId, playTTS, stopTTS } from './tts'
+import { getExamTTSPrecacheState, loadVoiceProfileId, playTTS, stopTTS, subscribeExamTTSPrecache, type ExamTTSPrecacheState } from './tts'
 
 export const HOME_NAVIGATION_EVENT = 'focus-english-lab:navigate-home'
 
@@ -31,6 +31,7 @@ export function Timer({ seconds, onExpire, hidden = false, paused = false }: { s
 export function AudioPrompt({ text, autoPlay = false, onPlaybackChange }: { text: string; autoPlay?: boolean; onPlaybackChange?: (active: boolean) => void }) {
   const [state, setState] = useState<'idle' | 'loading' | 'playing' | 'played' | 'error'>('idle')
   const [status, setStatus] = useState('')
+  const [precache, setPrecache] = useState<ExamTTSPrecacheState>(() => getExamTTSPrecacheState())
   const started = useRef(false)
   const play = useCallback(async () => {
     if (started.current) return
@@ -64,8 +65,9 @@ export function AudioPrompt({ text, autoPlay = false, onPlaybackChange }: { text
     return () => window.clearTimeout(id)
   }, [autoPlay, play])
   useEffect(() => () => { stopTTS(); onPlaybackChange?.(false) }, [onPlaybackChange])
+  useEffect(() => subscribeExamTTSPrecache(setPrecache), [])
   const label = state === 'played' ? 'Audio played' : state === 'error' ? 'Try audio again' : state === 'loading' ? 'Preparing natural voice…' : state === 'playing' ? 'Playing audio…' : 'Play audio once'
-  return <div className="audio-prompt"><button className="audio-button" onClick={play} disabled={state === 'loading' || state === 'playing' || state === 'played'}><span className={state === 'loading' || state === 'playing' ? 'audio-dot audio-dot--active' : 'audio-dot'} />{label}</button>{status && <small aria-live="polite">{status}</small>}</div>
+  return <div className="audio-prompt"><button className="audio-button" onClick={play} disabled={state === 'loading' || state === 'playing' || state === 'played'}><span className={state === 'loading' || state === 'playing' ? 'audio-dot audio-dot--active' : 'audio-dot'} />{label}</button>{status && <small aria-live="polite">{status}</small>}{precache.status === 'preparing' && <div className="audio-precache" role="status" aria-live="polite"><span>백그라운드 음성 준비 {precache.completed}/{precache.total} · {precache.percent}%</span><i aria-hidden="true"><b style={{ width: `${precache.percent}%` }} /></i></div>}</div>
 }
 
 export function Recorder({ onRecorded }: { onRecorded: (duration: number) => void }) {
