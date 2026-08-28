@@ -30,13 +30,6 @@ function post(type: string, requestId: string, payload: Record<string, unknown> 
   workerScope.postMessage({ type, requestId, ...payload })
 }
 
-function isSafariWebKit() {
-  const userAgent = navigator.userAgent
-  const isIOS = /iPad|iPhone|iPod/i.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-  if (isIOS) return true
-  return /Safari/i.test(userAgent) && !/(Chrome|Chromium|CriOS|FxiOS|EdgiOS|OPiOS)/i.test(userAgent)
-}
-
 function configureRuntime(wasmBaseUrl: string, backend: BrowserBackend) {
   if (configuredWasmBaseUrl) return
   configuredWasmBaseUrl = wasmBaseUrl.endsWith('/') ? wasmBaseUrl : `${wasmBaseUrl}/`
@@ -45,10 +38,12 @@ function configureRuntime(wasmBaseUrl: string, backend: BrowserBackend) {
   if (!wasm) throw new Error('ONNX WASM backend를 사용할 수 없습니다.')
   wasm.numThreads = 1
   wasm.proxy = false
-  // Transformers.js v4 uses the native C++ WebGPU EP. Safari follows the
-  // upstream standard-WASM path; other WebGPU browsers use Asyncify so CPU
-  // fallback operators can yield without blocking the Worker.
-  configuredRuntimeVariant = backend === 'webgpu' && !isSafariWebKit() ? 'asyncify' : 'standard'
+  // The native WebGPU build exports webgpuInit only from the asyncify host.
+  // The standard host is CPU-only, so pairing it with device: 'webgpu' fails
+  // on Safari with "webgpuInit is not a function" before model creation.
+  // Asyncify is the native C++ WebGPU EP here; it is not the deprecated JSEP
+  // runtime. CPU-only WASM continues to use the smaller standard host.
+  configuredRuntimeVariant = backend === 'webgpu' ? 'asyncify' : 'standard'
   const suffix = configuredRuntimeVariant === 'asyncify' ? '.asyncify' : ''
   wasm.wasmPaths = {
     mjs: `${configuredWasmBaseUrl}ort-wasm-simd-threaded${suffix}.mjs`,
