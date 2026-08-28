@@ -20,6 +20,11 @@ describe('portable exam packs', () => {
     expect(() => parseExamPack(createExamPack([{ ...item, answer: 4 }]))).toThrow(/잘못된/)
   })
 
+  it('rejects items missing fields required by their task type', () => {
+    const { audioText: _audioText, ...withoutAudio } = item
+    expect(() => parseExamPack(createExamPack([withoutAudio as BaseItem]))).toThrow(/필수 항목/)
+  })
+
   it('exposes and builds every section task type independently', () => {
     const expected = { reading: 3, listening: 4, writing: 3, speaking: 2 } as const
     for (const [section, expectedCount] of Object.entries(expected)) {

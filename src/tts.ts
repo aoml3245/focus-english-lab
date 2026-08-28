@@ -34,6 +34,7 @@ const SPEAKER_RE = /(?:^|\s)([A-Z][A-Za-z ]{0,24}):\s*/g
 
 type ProgressHandler = (message: string) => void
 type PlayOptions = { maxWaitMs?: number }
+type BrowserKokoro = { generate: (text: string, options: { voice: string; speed?: number }) => Promise<{ toBlob: () => Blob }> }
 let activeAudio: HTMLAudioElement | null = null
 let activeUrls: string[] = []
 let playbackGeneration = 0
@@ -43,6 +44,8 @@ let examPrecacheGeneration = 0
 let activePlaybackController: AbortController | null = null
 let examPrecacheController: AbortController | null = null
 const pendingPlaybackRequests = new Set<AbortController>()
+let browserKokoroPromise: Promise<BrowserKokoro> | null = null
+const browserKokoroProgressHandlers = new Set<ProgressHandler>()
 
 export function hasLocalTtsServer() {
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
@@ -102,6 +105,52 @@ function splitSpeakers(text: string) {
     const end = matches[index + 1]?.index ?? text.length
     return { text: text.slice(start, end).trim(), speaker: speakers.get(label) || 0 }
   }).filter((part) => part.text)
+}
+
+function chunkSpeechParts(parts: Array<{ text: string; speaker: number }>, maxLength = 360) {
+  return parts.flatMap((part) => {
+    if (part.text.length <= maxLength) return [part]
+    const sentences = part.text.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((value) => value.trim()).filter(Boolean) || [part.text]
+    const chunks: Array<{ text: string; speaker: number }> = []
+    let current = ''
+    for (const sentence of sentences) {
+      if (current && current.length + sentence.length + 1 > maxLength) { chunks.push({ text: current, speaker: part.speaker }); current = '' }
+      if (sentence.length <= maxLength) { current = current ? `${current} ${sentence}` : sentence; continue }
+      for (const word of sentence.split(/\s+/)) {
+        if (current && current.length + word.length + 1 > maxLength) { chunks.push({ text: current, speaker: part.speaker }); current = '' }
+        current = current ? `${current} ${word}` : word
+      }
+    }
+    if (current) chunks.push({ text: current, speaker: part.speaker })
+    return chunks
+  })
+}
+
+function reportBrowserKokoroProgress(message: string) {
+  browserKokoroProgressHandlers.forEach((handler) => handler(message))
+}
+
+async function loadBrowserKokoro(onProgress: ProgressHandler, signal?: AbortSignal) {
+  browserKokoroProgressHandlers.add(onProgress)
+  try {
+    if (!browserKokoroPromise) {
+      reportBrowserKokoroProgress('Kokoro 82M을 처음 준비합니다. 약 90MB를 한 번만 다운로드합니다…')
+      browserKokoroPromise = import('kokoro-js').then(async ({ KokoroTTS }) => {
+        const model = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
+          dtype: 'q8',
+          device: 'wasm',
+          progress_callback: (progress: { status?: string; progress?: number }) => {
+            if (progress.status === 'progress' && Number.isFinite(progress.progress)) reportBrowserKokoroProgress(`Kokoro 82M 다운로드 중… ${Math.round(progress.progress || 0)}%`)
+          },
+        })
+        reportBrowserKokoroProgress('Kokoro 82M이 브라우저에 준비됐습니다.')
+        return model as BrowserKokoro
+      }).catch((error) => { browserKokoroPromise = null; throw error })
+    } else reportBrowserKokoroProgress('브라우저에 저장된 Kokoro 82M을 불러오고 있습니다…')
+    const model = await browserKokoroPromise
+    if (signal?.aborted) throw new DOMException('Audio preparation cancelled', 'AbortError')
+    return model
+  } finally { browserKokoroProgressHandlers.delete(onProgress) }
 }
 
 function systemVoice() {
@@ -173,9 +222,14 @@ function prepareSystemVoices(onProgress: ProgressHandler) {
 
 export async function prepareTTS(profileId: VoiceProfileId, onProgress: ProgressHandler, signal?: AbortSignal): Promise<TTSPreparationResult> {
   const profile = getVoiceProfile(profileId)
-  if (profile.id === 'system' || !hasLocalTtsServer()) {
+  if (profile.id === 'system') {
     await prepareSystemVoices(onProgress)
-    return { engine: 'system', fallback: profile.id !== 'system', voices: 1, clips: 0 }
+    return { engine: 'system', fallback: false, voices: 1, clips: 0 }
+  }
+  if (!hasLocalTtsServer()) {
+    await loadBrowserKokoro(onProgress, signal)
+    const voices = new Set([profile.primary, profile.secondary].filter(Boolean)).size
+    return { engine: 'kokoro', fallback: false, voices, clips: 0 }
   }
   onProgress('로컬 음성 서버를 확인하고 있습니다…')
   const response = await fetch('/api/tts/status', { signal })
@@ -192,13 +246,20 @@ function speechKey(text: string, profile: VoiceProfile) {
 }
 
 async function synthesizeSpeech(text: string, profile: VoiceProfile, onProgress: ProgressHandler, signal: AbortSignal) {
-  const parts = splitSpeakers(text)
+  const parts = chunkSpeechParts(splitSpeakers(text))
   const blobs: Blob[] = []
+  const browserModel = hasLocalTtsServer() ? null : await loadBrowserKokoro(onProgress, signal)
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index]
-    onProgress(`서버 음성 불러오는 중… ${index + 1}/${parts.length}`)
+    onProgress(`${browserModel ? '브라우저 AI 음성 생성 중' : '서버 음성 불러오는 중'}… ${index + 1}/${parts.length}`)
     const voice = part.speaker % 2 === 1 && profile.secondary ? profile.secondary : profile.primary!
     if (signal.aborted) throw new DOMException('Audio request cancelled', 'AbortError')
+    if (browserModel) {
+      const audio = await browserModel.generate(part.text, { voice, speed: 1 })
+      if (signal.aborted) throw new DOMException('Audio request cancelled', 'AbortError')
+      blobs.push(audio.toBlob())
+      continue
+    }
     const response = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: part.text, voice, speed: 1 }), signal })
     if (!response.ok) {
       const payload = await response.json().catch(() => ({})) as { error?: string }
@@ -235,14 +296,15 @@ export async function prepareExamTTS(texts: string[], profileId: VoiceProfileId,
   if (result.engine !== 'kokoro') return result
   const profile = getVoiceProfile(profileId)
   const uniqueTexts = [...new Set(texts.filter(Boolean))]
+  const precacheTexts = hasLocalTtsServer() ? uniqueTexts : uniqueTexts.slice(0, 2)
   const generation = ++examPrecacheGeneration
   void (async () => {
-    for (let index = 0; index < uniqueTexts.length; index += 1) {
+    for (let index = 0; index < precacheTexts.length; index += 1) {
       if (generation !== examPrecacheGeneration || controller.signal.aborted) return
-      await getSpeech(uniqueTexts[index], profile, () => undefined, controller, 'precache')
+      await getSpeech(precacheTexts[index], profile, () => undefined, controller, 'precache')
     }
   })().catch(() => undefined).finally(() => { if (examPrecacheController === controller) examPrecacheController = null })
-  return { ...result, clips: uniqueTexts.length }
+  return { ...result, clips: precacheTexts.length }
 }
 
 function playElement(audio: HTMLAudioElement, generation: number, signal: AbortSignal, onProgress: ProgressHandler) {
@@ -286,11 +348,9 @@ export async function playTTS(text: string, profileId: VoiceProfileId, onProgres
   const profile = getVoiceProfile(profileId)
   const generation = playbackGeneration
   try {
-    if (profile.id === 'system' || !hasLocalTtsServer()) {
-      if (profile.id !== 'system') onProgress('웹 버전에서는 기기 영어 음성으로 재생합니다…')
+    if (profile.id === 'system') {
       await speakWithSystem(text, onProgress, controller.signal, generation)
       if (controller.signal.aborted || generation !== playbackGeneration) return 'cancelled'
-      if (profile.id !== 'system') return 'fallback'
     }
     else {
       const played = await speakWithKokoro(text, profile, onProgress, controller, generation, options.maxWaitMs)

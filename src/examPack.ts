@@ -23,10 +23,20 @@ function isItem(value: unknown): value is BaseItem {
   const item = value as Partial<BaseItem>
   if (!item.id || typeof item.id !== 'string' || !item.title || typeof item.title !== 'string') return false
   if (!item.section || !SECTIONS.has(item.section) || !item.kind || !KINDS.has(item.kind)) return false
-  if (!Number.isFinite(item.module) || !Number.isFinite(item.timeSeconds) || item.timeSeconds! <= 0) return false
+  if (!Number.isFinite(item.module) || !Number.isFinite(item.timeSeconds) || item.timeSeconds! <= 0 || typeof item.instruction !== 'string') return false
   if (item.options !== undefined && (!Array.isArray(item.options) || item.options.some((option) => typeof option !== 'string'))) return false
   if (typeof item.answer === 'number' && (!item.options || item.answer < 0 || item.answer >= item.options.length)) return false
-  return true
+  const hasOptionsAndIndex = Array.isArray(item.options) && item.options.length >= 2 && Number.isInteger(item.answer)
+  switch (item.kind) {
+    case 'complete-words': return typeof item.passage === 'string' && item.passage.length > 0 && typeof item.answer === 'string'
+    case 'multiple-choice': return typeof item.passage === 'string' && item.passage.length > 0 && typeof item.prompt === 'string' && hasOptionsAndIndex
+    case 'listen-choice': return typeof item.audioText === 'string' && item.audioText.length > 0 && hasOptionsAndIndex
+    case 'sentence-build': return typeof item.prompt === 'string' && typeof item.starter === 'string' && Array.isArray(item.words) && item.words.length > 0 && item.words.every((word) => typeof word === 'string') && typeof item.answer === 'string'
+    case 'email':
+    case 'discussion': return typeof item.prompt === 'string' && item.prompt.length > 0
+    case 'repeat':
+    case 'interview': return typeof item.audioText === 'string' && item.audioText.length > 0
+  }
 }
 
 export function parseExamPack(value: unknown): ExamPack {
