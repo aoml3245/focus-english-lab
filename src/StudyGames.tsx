@@ -8,7 +8,6 @@ import { buildStudyQuestions, createMasteryProgress, isObjectiveAnswerCorrect, s
 const LEVELS = ['All', 'B1', 'B2', 'C1', 'C2']
 const SIZES = [10, 20, 30]
 const MEMORIZATION_SIZE = 100
-const DECK_PAGE_SIZE = 10
 const MASTERY_STORAGE_KEY = 'focus-english-lab:mastery-course:v1'
 
 type SavedMasteryCourse = { version: 1; deck: LearningEntry[]; progress: MasteryProgress | null; view: 'memorize' | 'mastery'; deckPage: number }
@@ -144,13 +143,21 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
 }
 
 function MemorizationDeck({ entries, page, onPage, onStartMastery }: { entries: LearningEntry[]; page: number; onPage: (page: number) => void; onStartMastery: () => void }) {
-  const pages = Math.max(1, Math.ceil(entries.length / DECK_PAGE_SIZE))
-  const visible = entries.slice(page * DECK_PAGE_SIZE, (page + 1) * DECK_PAGE_SIZE)
+  const total = Math.max(1, entries.length)
+  const safePage = Math.min(page, total - 1)
+  const entry = entries[safePage]
+  if (!entry) return null
   return <section className="memorization-deck">
-    <div className="memorization-head"><div><span>MASTERY PREP</span><h1>{entries.length}개를 먼저 익혀보세요.</h1><p>10개씩 뜻·동의어·예문을 확인하세요. 이후 최소 1,100회 회상하는 5단계 코스가 시작됩니다.</p></div><strong>{page + 1} / {pages}</strong></div>
-    <div className="memorization-progress"><i style={{ width: `${((page + 1) / pages) * 100}%` }} /></div>
-    <div className="memorization-grid">{visible.map((entry, index) => <article key={entry.word}><span>{page * DECK_PAGE_SIZE + index + 1}</span><div><h2>{entry.word}</h2><small>{entry.partOfSpeech} · {entry.cefr}</small></div><strong>{entry.meaningKo}</strong><p>{entry.synonyms.slice(0, 3).join(' · ') || entry.meaningEn}</p><blockquote>{entry.example}<small>{entry.translation}</small></blockquote></article>)}</div>
-    <div className="memorization-actions"><button className="button button--secondary button--large" disabled={page === 0} onClick={() => onPage(page - 1)}><ArrowIcon direction="left" /> 이전 10개</button>{page + 1 < pages ? <button className="button button--primary button--large" onClick={() => onPage(page + 1)}>다음 10개 <ArrowIcon /></button> : <button className="button button--primary button--large" onClick={onStartMastery}>5단계 마스터리 시작 <ArrowIcon /></button>}</div>
+    <div className="memorization-head"><div><span>MASTERY PREP</span><h1>한 장씩, 100개.</h1><p>한 화면에서 단어 하나에 집중하세요. 뜻·동의어·예문을 확인한 뒤 다음 카드로 넘어갑니다.</p></div><strong>{safePage + 1} / {total}</strong></div>
+    <div className="memorization-progress"><i style={{ width: `${((safePage + 1) / total) * 100}%` }} /></div>
+    <article className="memorization-flashcard" key={entry.word}>
+      <div className="memorization-flashcard__top"><span>{String(safePage + 1).padStart(3, '0')}</span><div><small>{entry.partOfSpeech} · {entry.cefr}</small><h2>{entry.word}</h2>{entry.ipa && <em>{entry.ipa}</em>}</div></div>
+      <div className="memorization-flashcard__meaning"><span>한국어 뜻</span><strong>{entry.meaningKo}</strong><p>{entry.meaningEn}</p></div>
+      <div className="memorization-flashcard__synonyms"><span>가까운 동의어</span><div>{entry.synonyms.length ? entry.synonyms.slice(0, 3).map((synonym) => <strong key={synonym}>{synonym}</strong>) : <small>등록된 동의어가 없습니다.</small>}</div></div>
+      <blockquote><span>CONTEXT EXAMPLE</span><p>{entry.example}</p><small>{entry.translation}</small></blockquote>
+      <footer><span>{entry.topics.slice(0, 3).join(' · ')}</span>{entry.academicCore && <strong>ACADEMIC CORE</strong>}</footer>
+    </article>
+    <div className="memorization-actions"><button className="button button--secondary button--large" disabled={safePage === 0} onClick={() => onPage(safePage - 1)}><ArrowIcon direction="left" /> 이전 단어</button>{safePage + 1 < total ? <button className="button button--primary button--large" onClick={() => onPage(safePage + 1)}>다음 단어 <ArrowIcon /></button> : <button className="button button--primary button--large" onClick={onStartMastery}>5단계 마스터리 시작 <ArrowIcon /></button>}</div>
   </section>
 }
 
