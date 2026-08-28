@@ -75,6 +75,7 @@ let lastBrowserKokoroProgress: { message: string; detail: TTSProgressDetail } | 
 const workerRequests = new Map<string, WorkerRequest>()
 let workerRequestSequence = 0
 let activeBrowserBackend: 'webgpu' | 'wasm' | null = null
+let lastBrowserBackendFallbackReason = ''
 
 export function hasLocalTtsServer() {
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
@@ -100,11 +101,16 @@ export function saveTTSBackendPreference(preference: TTSBackendPreference) {
   stopAllTTS()
   if (browserKokoroWorker) failWorker(new DOMException('TTS backend changed', 'AbortError'))
   activeBrowserBackend = null
+  lastBrowserBackendFallbackReason = ''
   lastBrowserKokoroProgress = null
 }
 
 export function getActiveBrowserTTSBackend() {
   return activeBrowserBackend
+}
+
+export function getBrowserTTSFallbackReason() {
+  return lastBrowserBackendFallbackReason
 }
 
 export async function getBrowserKokoroCacheState(): Promise<'available' | 'missing' | 'unsupported'> {
@@ -232,6 +238,7 @@ async function loadBrowserKokoro(onProgress: ProgressHandler, signal?: AbortSign
         try { await initializeBackend(requestedBackend) }
         catch (error) {
           if (requestedBackend !== 'webgpu') throw error
+          lastBrowserBackendFallbackReason = error instanceof Error ? error.message : String(error)
           browserKokoroWorker?.terminate()
           browserKokoroWorker = null
           activeBrowserBackend = null
@@ -263,7 +270,7 @@ function failWorker(error: Error) {
 function getBrowserKokoroWorker() {
   if (browserKokoroWorker) return browserKokoroWorker
   const worker = new Worker(new URL('./tts.worker.ts', import.meta.url), { type: 'module', name: 'focus-english-kokoro' })
-  worker.onmessage = (event: MessageEvent<{ type: string; requestId: string; blob?: Blob; index?: number; message?: string; percent?: number; loadedBytes?: number; totalBytes?: number; file?: string; backend?: 'webgpu' | 'wasm' }>) => {
+  worker.onmessage = (event: MessageEvent<{ type: string; requestId: string; blob?: Blob; index?: number; message?: string; percent?: number; loadedBytes?: number; totalBytes?: number; file?: string; backend?: 'webgpu' | 'wasm'; dtype?: string }>) => {
     const message = event.data
     const request = workerRequests.get(message.requestId)
     if (message.type === 'progress') {
@@ -275,6 +282,10 @@ function getBrowserKokoroWorker() {
     if (message.type === 'backend-fallback') {
       activeBrowserBackend = 'wasm'
       reportBrowserKokoroProgress('WebGPU 초기화에 실패해 q8 WASM 호환 모드로 전환합니다…', { phase: 'initializing', percent: 0, backend: 'wasm' })
+      return
+    }
+    if (message.type === 'backend-info') {
+      reportBrowserKokoroProgress(`WebGPU ${message.dtype || '모델'}을 초기화합니다…`, { phase: 'initializing', percent: 0, backend: 'webgpu' })
       return
     }
     if (!request) return

@@ -37,9 +37,18 @@ function configureRuntime(wasmBaseUrl: string) {
   }
 }
 
-function loadModel(requestId: string, backend: BrowserBackend) {
+async function webGpuDtype() {
+  const gpu = (navigator as unknown as { gpu?: { requestAdapter: () => Promise<{ features: Set<string> } | null> } }).gpu
+  const adapter = await gpu?.requestAdapter()
+  if (!adapter) throw new Error('WebGPU adapter를 만들지 못했습니다.')
+  return adapter.features.has('shader-f16') ? 'fp16' as const : 'fp32' as const
+}
+
+async function loadModel(requestId: string, backend: BrowserBackend) {
+  const dtype = backend === 'webgpu' ? await webGpuDtype() : 'q8' as const
+  if (backend === 'webgpu') post('backend-info', requestId, { backend, dtype })
   return KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
-    dtype: backend === 'webgpu' ? 'fp16' : 'q8',
+    dtype,
     device: backend,
     progress_callback: (progress: { status?: string; progress?: number; loaded?: number; total?: number; file?: string }) => {
       if (progress.status !== 'progress' || !Number.isFinite(progress.progress)) return
