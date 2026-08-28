@@ -4,7 +4,7 @@ import { CONTEXT_TOPIC_COUNT, SECTION_META } from './data'
 import { buildFullPracticeSetFrom, buildSectionPracticeFrom, buildTaskPracticeFrom, countBySectionFrom, getActiveExamPackInfo, getActivePracticeItems, getAvailablePracticeItems, getPracticeTaskTypesFrom } from './examPack'
 import { displayAnswer, getSessionStats, isCorrect } from './review'
 import { finishSession, loadActive, loadExcludedItemIds, loadHistory, saveActive, setSessionRandomEligibility } from './storage'
-import { getVoiceProfile, playTTS, prepareExamTTS, stopAllTTS, stopTTS } from './tts'
+import { getVoiceProfile, hasLocalTtsServer, playTTS, prepareExamTTS, stopAllTTS, stopTTS, type TTSProgressDetail } from './tts'
 import type { Answer, BaseItem, PracticeMode, SavedSession, Section } from './types'
 
 const Vocabulary = lazy(() => import('./Vocabulary'))
@@ -200,22 +200,23 @@ function TaskSelect({ section, onBack, onSelectAll, onSelectTask }: { section: S
 function Intro({ items, mode, practiceLabel, onBack, onStart }: { items: BaseItem[]; mode: PracticeMode; practiceLabel?: string; onBack: () => void; onStart: () => void }) {
   const first = items[0]
   const isFull = new Set(items.map((item) => item.section)).size > 1
+  const localTts = hasLocalTtsServer()
   const profile = getVoiceProfile()
   const [attempt, setAttempt] = useState(0)
-  const [preparation, setPreparation] = useState<{ phase: 'preparing' | 'ready' | 'system' | 'fallback' | 'error'; message: string }>({ phase: 'preparing', message: '음성 준비를 시작합니다…' })
+  const [preparation, setPreparation] = useState<{ phase: 'preparing' | 'ready' | 'system' | 'fallback' | 'error'; message: string; progress?: TTSProgressDetail }>({ phase: 'preparing', message: '음성 준비를 시작합니다…' })
   const [preview, setPreview] = useState<'idle' | 'playing' | 'done' | 'error'>('idle')
   const examAudioTexts = items.map((item) => item.audioText || '').filter(Boolean)
   useEffect(() => {
     let active = true
     setPreparation({ phase: 'preparing', message: '음성 준비를 시작합니다…' })
-    prepareExamTTS(examAudioTexts, profile.id, (message) => { if (active) setPreparation((current) => ({ ...current, message })) })
+    prepareExamTTS(examAudioTexts, profile.id, (message, progress) => { if (active) setPreparation((current) => ({ ...current, message, progress: progress || current.progress })) })
       .then((result) => {
         if (!active) return
-        setPreparation({ phase: result.fallback ? 'fallback' : result.engine === 'system' ? 'system' : 'ready', message: result.fallback ? 'AI 엔진 대신 기기 영어 음성이 준비됐습니다.' : result.engine === 'system' ? '선택한 기기 영어 음성이 준비됐습니다. 첫 듣기 문항부터 바로 재생됩니다.' : '로컬 AI 서버 준비 완료 · 시험 음성은 자동으로 캐시됩니다.' })
+        setPreparation({ phase: result.fallback ? 'fallback' : result.engine === 'system' ? 'system' : 'ready', message: result.fallback ? 'AI 엔진 대신 기기 영어 음성이 준비됐습니다.' : result.engine === 'system' ? '선택한 기기 영어 음성이 준비됐습니다. 첫 듣기 문항부터 바로 재생됩니다.' : localTts ? '로컬 AI 서버 준비 완료 · 시험 음성은 자동으로 캐시됩니다.' : '브라우저 Kokoro 82M 준비 완료 · 모델은 이 브라우저에 저장됩니다.', progress: result.engine === 'kokoro' ? { phase: 'ready', percent: 100, cached: true } : undefined })
       })
       .catch((error: unknown) => { if (active) setPreparation({ phase: 'error', message: error instanceof Error ? error.message : '음성 엔진을 준비하지 못했습니다.' }) })
     return () => { active = false; stopTTS() }
-  }, [attempt, items, profile.id])
+  }, [attempt, items, localTts, profile.id])
   const playCheck = async () => {
     setPreview('playing')
     try {
@@ -226,7 +227,7 @@ function Intro({ items, mode, practiceLabel, onBack, onStart }: { items: BaseIte
   const preparing = preparation.phase === 'preparing'
   const ready = preparation.phase === 'ready' || preparation.phase === 'system' || preparation.phase === 'fallback'
   const modeTitle = practiceLabel || (mode === 'study' ? '즉시 피드백 랜덤 세트' : mode === 'mock' ? '실전 모의시험' : `${SECTION_META[first.section].label} 집중 연습`)
-  return <div className="intro-screen"><header><Brand /><span>System check</span></header><main><div className="intro-copy"><span className="section-label">{isFull ? 'R · L · W · S' : SECTION_META[first.section].label}</span><h1>{modeTitle}</h1><p>{items.length}문항이 {BANK_SIZE}개 문제은행에서 새로 선택되었습니다. 모든 콘텐츠는 독창적인 연습 문항입니다.</p><ul>{mode === 'study' ? <><li>객관식 문항마다 답을 제출하면 즉시 정오답과 해설을 보여줍니다.</li><li>피드백을 확인하는 동안 타이머가 멈춥니다.</li></> : <li>정답과 해설은 전체 시험을 마친 뒤에 공개됩니다.</li>}<li>AI 음성은 로컬 서버에서 준비하며 시험 시작을 막지 않습니다.</li><li>Listening에서는 이전 문항으로 돌아갈 수 없습니다.</li><li>Speaking 녹음을 위해 마이크 권한이 필요합니다.</li></ul></div><div className="system-panel"><h2>시작 전 확인</h2><div><span>학습 방식</span><strong>{mode === 'study' ? '문항별 즉시 채점' : '종료 후 채점'}</strong></div><div><span>선택 문항</span><strong>{items.length}</strong></div><div><span>오디오 출력</span><strong>{profile.shortLabel}</strong></div><div><span>마이크</span><strong>Speaking에서 요청</strong></div><div className={`preflight-status preflight-status--${preparation.phase}`} role="status" aria-live="polite"><span className={preparing ? 'audio-pulse audio-pulse--active' : 'audio-pulse'} /><span><strong>{preparing ? 'AI 음성 백그라운드 준비 중' : preparation.phase === 'ready' ? 'AI 음성 준비 완료' : preparation.phase === 'system' ? '기기 음성 준비 완료' : preparation.phase === 'fallback' ? '대체 음성 준비 완료' : '음성 준비 실패'}</strong><small>{preparing ? `${preparation.message} 지금 바로 시험을 시작해도 됩니다.` : preparation.message}</small></span></div>{ready && <button className="button button--secondary preflight-test" disabled={preview === 'playing'} onClick={playCheck}>{preview === 'playing' ? '테스트 음성 재생 중…' : preview === 'done' ? '테스트 다시 듣기' : preview === 'error' ? '음성 테스트 다시 시도' : '준비된 음성 테스트'}</button>}{preparation.phase === 'error' && <button className="button button--secondary preflight-test" onClick={() => setAttempt((value) => value + 1)}>음성 준비 다시 시도</button>}<button className="button button--primary button--large" disabled={preview === 'playing'} onClick={onStart}>시험 바로 시작 <ArrowIcon /></button><button className="text-button" onClick={onBack}>나중에 하기</button></div></main></div>
+  return <div className="intro-screen"><header><Brand /><span>System check</span></header><main><div className="intro-copy"><span className="section-label">{isFull ? 'R · L · W · S' : SECTION_META[first.section].label}</span><h1>{modeTitle}</h1><p>{items.length}문항이 {BANK_SIZE}개 문제은행에서 새로 선택되었습니다. 모든 콘텐츠는 독창적인 연습 문항입니다.</p><ul>{mode === 'study' ? <><li>객관식 문항마다 답을 제출하면 즉시 정오답과 해설을 보여줍니다.</li><li>피드백을 확인하는 동안 타이머가 멈춥니다.</li></> : <li>정답과 해설은 전체 시험을 마친 뒤에 공개됩니다.</li>}<li>AI 음성은 {localTts ? '로컬 서버' : '이 웹브라우저'}에서 준비하며 시험 시작을 막지 않습니다.</li><li>Listening에서는 이전 문항으로 돌아갈 수 없습니다.</li><li>Speaking 녹음을 위해 마이크 권한이 필요합니다.</li></ul></div><div className="system-panel"><h2>시작 전 확인</h2><div><span>학습 방식</span><strong>{mode === 'study' ? '문항별 즉시 채점' : '종료 후 채점'}</strong></div><div><span>선택 문항</span><strong>{items.length}</strong></div><div><span>오디오 출력</span><strong>{profile.shortLabel}</strong></div><div><span>마이크</span><strong>Speaking에서 요청</strong></div><div className={`preflight-status preflight-status--${preparation.phase}`} role="status" aria-live="polite"><span className={preparing ? 'audio-pulse audio-pulse--active' : 'audio-pulse'} /><span><strong>{preparing ? 'AI 음성 백그라운드 준비 중' : preparation.phase === 'ready' ? 'AI 음성 준비 완료' : preparation.phase === 'system' ? '기기 음성 준비 완료' : preparation.phase === 'fallback' ? '대체 음성 준비 완료' : '음성 준비 실패'}</strong><small>{preparing ? `${preparation.message} 지금 바로 시험을 시작해도 됩니다.` : preparation.message}</small>{preparing && preparation.progress?.percent !== undefined && <span className="preflight-progress" role="progressbar" aria-label="AI 음성 모델 준비 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={preparation.progress.percent}><span style={{ width: `${preparation.progress.percent}%` }} /></span>}{preparing && preparation.progress?.loadedBytes !== undefined && preparation.progress.totalBytes !== undefined && <small>{(preparation.progress.loadedBytes / 1024 / 1024).toFixed(1)} / {(preparation.progress.totalBytes / 1024 / 1024).toFixed(1)} MB{preparation.progress.file ? ` · ${preparation.progress.file}` : ''}</small>}</span></div>{ready && <button className="button button--secondary preflight-test" disabled={preview === 'playing'} onClick={playCheck}>{preview === 'playing' ? '테스트 음성 재생 중…' : preview === 'done' ? '테스트 다시 듣기' : preview === 'error' ? '음성 테스트 다시 시도' : '준비된 음성 테스트'}</button>}{preparation.phase === 'error' && <button className="button button--secondary preflight-test" onClick={() => setAttempt((value) => value + 1)}>음성 준비 다시 시도</button>}<button className="button button--primary button--large" disabled={preview === 'playing'} onClick={onStart}>시험 바로 시작 <ArrowIcon /></button><button className="text-button" onClick={onBack}>나중에 하기</button></div></main></div>
 }
 
 function Test({ items, session, setSession, onAnswer, onFinish }: { items: BaseItem[]; session: SavedSession; setSession: (s: SavedSession) => void; onAnswer: (id: string, answer: Answer) => void; onFinish: () => void }) {

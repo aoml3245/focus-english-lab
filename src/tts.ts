@@ -18,6 +18,15 @@ export type TTSPreparationResult = {
   clips: number
 }
 
+export type TTSProgressDetail = {
+  phase: 'checking' | 'downloading' | 'loading-cache' | 'initializing' | 'generating' | 'playing' | 'ready' | 'complete'
+  percent?: number
+  loadedBytes?: number
+  totalBytes?: number
+  file?: string
+  cached?: boolean
+}
+
 export const VOICE_PROFILES: VoiceProfile[] = [
   { id: 'toefl-balanced', name: 'TOEFL 균형형', shortLabel: 'AI · 미국식 혼합', description: '대화에서는 여성·남성 화자를 자동으로 나누고, 강의에서는 자연스러운 미국식 음성을 사용합니다.', accent: '미국식 · 여성/남성', primary: 'af_heart', secondary: 'am_michael', recommended: true },
   { id: 'us-female', name: 'Heart', shortLabel: 'AI · 미국 여성', description: '명료하면서도 부드러운 미국식 여성 음성입니다. Kokoro 음성 중 품질 등급이 가장 높습니다.', accent: '미국식 · 여성', primary: 'af_heart' },
@@ -32,7 +41,7 @@ const STORAGE_KEY = 'focus-english-lab:voice-profile:v1'
 const DEFAULT_PROFILE: VoiceProfileId = 'toefl-balanced'
 const SPEAKER_RE = /(?:^|\s)([A-Z][A-Za-z ]{0,24}):\s*/g
 
-type ProgressHandler = (message: string) => void
+type ProgressHandler = (message: string, detail?: TTSProgressDetail) => void
 type PlayOptions = { maxWaitMs?: number }
 type BrowserKokoro = { generate: (text: string, options: { voice: string; speed?: number }) => Promise<{ toBlob: () => Blob }> }
 let activeAudio: HTMLAudioElement | null = null
@@ -46,9 +55,22 @@ let examPrecacheController: AbortController | null = null
 const pendingPlaybackRequests = new Set<AbortController>()
 let browserKokoroPromise: Promise<BrowserKokoro> | null = null
 const browserKokoroProgressHandlers = new Set<ProgressHandler>()
+let lastBrowserKokoroProgress: { message: string; detail: TTSProgressDetail } | null = null
 
 export function hasLocalTtsServer() {
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+}
+
+export async function getBrowserKokoroCacheState(): Promise<'available' | 'missing' | 'unsupported'> {
+  if (hasLocalTtsServer() || typeof caches === 'undefined') return 'unsupported'
+  try {
+    const cache = await caches.open('transformers-cache')
+    const keys = await cache.keys()
+    return keys.some((request) => {
+      const url = decodeURIComponent(request.url)
+      return url.includes('Kokoro-82M-v1.0-ONNX') && /model.*(?:q8|quantized).*\.onnx/i.test(url)
+    }) ? 'available' : 'missing'
+  } catch { return 'unsupported' }
 }
 
 export function loadVoiceProfileId(): VoiceProfileId {
@@ -126,27 +148,35 @@ function chunkSpeechParts(parts: Array<{ text: string; speaker: number }>, maxLe
   })
 }
 
-function reportBrowserKokoroProgress(message: string) {
-  browserKokoroProgressHandlers.forEach((handler) => handler(message))
+function reportBrowserKokoroProgress(message: string, detail: TTSProgressDetail) {
+  lastBrowserKokoroProgress = { message, detail }
+  browserKokoroProgressHandlers.forEach((handler) => handler(message, detail))
 }
 
 async function loadBrowserKokoro(onProgress: ProgressHandler, signal?: AbortSignal) {
   browserKokoroProgressHandlers.add(onProgress)
   try {
     if (!browserKokoroPromise) {
-      reportBrowserKokoroProgress('Kokoro 82M을 처음 준비합니다. 약 90MB를 한 번만 다운로드합니다…')
-      browserKokoroPromise = import('kokoro-js').then(async ({ KokoroTTS }) => {
+      reportBrowserKokoroProgress('브라우저에 저장된 Kokoro 82M이 있는지 확인합니다…', { phase: 'checking', percent: 0 })
+      browserKokoroPromise = (async () => {
+        const cachedBeforeLoad = await getBrowserKokoroCacheState() === 'available'
+        reportBrowserKokoroProgress(cachedBeforeLoad ? '저장된 Kokoro 82M을 브라우저 캐시에서 읽습니다…' : 'Kokoro 82M을 처음 다운로드합니다…', { phase: cachedBeforeLoad ? 'loading-cache' : 'downloading', percent: 0, cached: cachedBeforeLoad })
+        const { KokoroTTS } = await import('kokoro-js')
         const model = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
           dtype: 'q8',
           device: 'wasm',
-          progress_callback: (progress: { status?: string; progress?: number }) => {
-            if (progress.status === 'progress' && Number.isFinite(progress.progress)) reportBrowserKokoroProgress(`Kokoro 82M 다운로드 중… ${Math.round(progress.progress || 0)}%`)
+          progress_callback: (progress: { status?: string; progress?: number; loaded?: number; total?: number; file?: string }) => {
+            if (progress.status !== 'progress' || !Number.isFinite(progress.progress)) return
+            const percent = Math.max(0, Math.min(100, Math.round(progress.progress || 0)))
+            const file = progress.file?.split('/').pop()
+            const phase = cachedBeforeLoad ? 'loading-cache' : 'downloading'
+            reportBrowserKokoroProgress(`${cachedBeforeLoad ? '브라우저 캐시 읽는 중' : 'Kokoro 82M 다운로드 중'}… ${percent}%`, { phase, percent, loadedBytes: progress.loaded, totalBytes: progress.total, file, cached: cachedBeforeLoad })
           },
         })
-        reportBrowserKokoroProgress('Kokoro 82M이 브라우저에 준비됐습니다.')
+        reportBrowserKokoroProgress('Kokoro 82M 초기화를 마쳤습니다. 이제 음성을 생성할 수 있습니다.', { phase: 'ready', percent: 100, cached: true })
         return model as BrowserKokoro
-      }).catch((error) => { browserKokoroPromise = null; throw error })
-    } else reportBrowserKokoroProgress('브라우저에 저장된 Kokoro 82M을 불러오고 있습니다…')
+      })().catch((error) => { browserKokoroPromise = null; lastBrowserKokoroProgress = null; throw error })
+    } else if (lastBrowserKokoroProgress) onProgress(lastBrowserKokoroProgress.message, lastBrowserKokoroProgress.detail)
     const model = await browserKokoroPromise
     if (signal?.aborted) throw new DOMException('Audio preparation cancelled', 'AbortError')
     return model
@@ -251,7 +281,7 @@ async function synthesizeSpeech(text: string, profile: VoiceProfile, onProgress:
   const browserModel = hasLocalTtsServer() ? null : await loadBrowserKokoro(onProgress, signal)
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index]
-    onProgress(`${browserModel ? '브라우저 AI 음성 생성 중' : '서버 음성 불러오는 중'}… ${index + 1}/${parts.length}`)
+    onProgress(`${browserModel ? '브라우저 AI 음성 생성 중' : '서버 음성 불러오는 중'}… ${index + 1}/${parts.length}`, browserModel ? { phase: 'generating', percent: Math.round((index / parts.length) * 100), cached: true } : undefined)
     const voice = part.speaker % 2 === 1 && profile.secondary ? profile.secondary : profile.primary!
     if (signal.aborted) throw new DOMException('Audio request cancelled', 'AbortError')
     if (browserModel) {
@@ -315,7 +345,7 @@ function playElement(audio: HTMLAudioElement, generation: number, signal: AbortS
     signal.addEventListener('abort', abort, { once: true })
     audio.onplay = () => {
       if (generation !== playbackGeneration || signal.aborted) { abort(); return }
-      onProgress('재생 중…')
+      onProgress('재생 중…', { phase: 'playing', percent: 100, cached: true })
     }
     audio.onended = () => { signal.removeEventListener('abort', abort); activeAudio = null; resolve() }
     audio.onerror = () => { signal.removeEventListener('abort', abort); activeAudio = null; reject(new Error('생성된 음성을 재생하지 못했습니다.')) }
