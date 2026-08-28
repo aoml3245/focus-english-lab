@@ -32,6 +32,7 @@ export type TTSProgressDetail = {
 }
 
 export type TTSBackendPreference = 'auto' | 'webgpu' | 'wasm'
+export type TTSRuntimeInfo = { runtime: 'native-webgpu-ep' | 'wasm'; runtimeVariant: 'standard' | 'asyncify'; ortVersion: string; dtype: string }
 
 export const VOICE_PROFILES: VoiceProfile[] = [
   { id: 'toefl-balanced', name: 'TOEFL 균형형', shortLabel: 'AI · 미국식 혼합', description: '대화에서는 여성·남성 화자를 자동으로 나누고, 강의에서는 자연스러운 미국식 음성을 사용합니다.', accent: '미국식 · 여성/남성', primary: 'af_heart', secondary: 'am_michael', recommended: true },
@@ -75,9 +76,11 @@ let lastBrowserKokoroProgress: { message: string; detail: TTSProgressDetail } | 
 const workerRequests = new Map<string, WorkerRequest>()
 let workerRequestSequence = 0
 let activeBrowserBackend: 'webgpu' | 'wasm' | null = null
+let activeBrowserRuntimeInfo: TTSRuntimeInfo | null = null
 let lastBrowserBackendFallbackReason = ''
 
 export function hasLocalTtsServer() {
+  if (new URLSearchParams(window.location.search).get('tts-runtime') === 'browser') return false
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
 }
 
@@ -101,12 +104,17 @@ export function saveTTSBackendPreference(preference: TTSBackendPreference) {
   stopAllTTS()
   if (browserKokoroWorker) failWorker(new DOMException('TTS backend changed', 'AbortError'))
   activeBrowserBackend = null
+  activeBrowserRuntimeInfo = null
   lastBrowserBackendFallbackReason = ''
   lastBrowserKokoroProgress = null
 }
 
 export function getActiveBrowserTTSBackend() {
   return activeBrowserBackend
+}
+
+export function getBrowserTTSRuntimeInfo() {
+  return activeBrowserRuntimeInfo
 }
 
 export function getBrowserTTSFallbackReason() {
@@ -265,12 +273,13 @@ function failWorker(error: Error) {
   browserKokoroWorker = null
   browserKokoroPromise = null
   activeBrowserBackend = null
+  activeBrowserRuntimeInfo = null
 }
 
 function getBrowserKokoroWorker() {
   if (browserKokoroWorker) return browserKokoroWorker
   const worker = new Worker(new URL('./tts.worker.ts', import.meta.url), { type: 'module', name: 'focus-english-kokoro' })
-  worker.onmessage = (event: MessageEvent<{ type: string; requestId: string; blob?: Blob; index?: number; message?: string; percent?: number; loadedBytes?: number; totalBytes?: number; file?: string; backend?: 'webgpu' | 'wasm'; dtype?: string }>) => {
+  worker.onmessage = (event: MessageEvent<{ type: string; requestId: string; blob?: Blob; index?: number; message?: string; percent?: number; loadedBytes?: number; totalBytes?: number; file?: string; backend?: 'webgpu' | 'wasm'; dtype?: string; runtime?: 'native-webgpu-ep' | 'wasm'; runtimeVariant?: 'standard' | 'asyncify'; ortVersion?: string }>) => {
     const message = event.data
     const request = workerRequests.get(message.requestId)
     if (message.type === 'progress') {
@@ -285,7 +294,8 @@ function getBrowserKokoroWorker() {
       return
     }
     if (message.type === 'backend-info') {
-      reportBrowserKokoroProgress(`WebGPU ${message.dtype || '모델'}을 초기화합니다…`, { phase: 'initializing', percent: 0, backend: 'webgpu' })
+      if (message.runtime && message.runtimeVariant && message.ortVersion) activeBrowserRuntimeInfo = { runtime: message.runtime, runtimeVariant: message.runtimeVariant, ortVersion: message.ortVersion, dtype: message.dtype || 'unknown' }
+      reportBrowserKokoroProgress(`${message.backend === 'webgpu' ? 'Native WebGPU' : 'WASM'} ${message.dtype || '모델'}을 초기화합니다…`, { phase: 'initializing', percent: 0, backend: message.backend })
       return
     }
     if (!request) return

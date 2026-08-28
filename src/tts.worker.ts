@@ -9,6 +9,11 @@ type InitMessage = { type: 'init'; requestId: string; wasmBaseUrl: string; backe
 type GenerateMessage = { type: 'generate'; requestId: string; parts: SpeechPart[] }
 type CancelMessage = { type: 'cancel'; requestId: string }
 type IncomingMessage = InitMessage | GenerateMessage | CancelMessage
+type OrtRuntime = {
+  wasm?: { numThreads?: number; proxy?: boolean; wasmPaths?: { mjs: string; wasm: string } }
+  webgpu?: { adapter?: unknown; powerPreference?: 'low-power' | 'high-performance' }
+  versions?: { web?: string }
+}
 
 type KokoroModel = Awaited<ReturnType<typeof KokoroTTS.from_pretrained>>
 type KokoroVoice = NonNullable<Parameters<KokoroModel['stream']>[1]>['voice']
@@ -17,6 +22,7 @@ const workerScope: DedicatedWorkerGlobalScope = self as unknown as DedicatedWork
 let modelPromise: Promise<KokoroModel> | null = null
 let modelBackend: BrowserBackend | null = null
 let configuredWasmBaseUrl = ''
+let configuredRuntimeVariant: 'standard' | 'asyncify' | null = null
 let generationQueue = Promise.resolve()
 const cancelledRequests = new Set<string>()
 
@@ -24,29 +30,48 @@ function post(type: string, requestId: string, payload: Record<string, unknown> 
   workerScope.postMessage({ type, requestId, ...payload })
 }
 
-function configureRuntime(wasmBaseUrl: string) {
+function isSafariWebKit() {
+  const userAgent = navigator.userAgent
+  const isIOS = /iPad|iPhone|iPod/i.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  if (isIOS) return true
+  return /Safari/i.test(userAgent) && !/(Chrome|Chromium|CriOS|FxiOS|EdgiOS|OPiOS)/i.test(userAgent)
+}
+
+function configureRuntime(wasmBaseUrl: string, backend: BrowserBackend) {
   if (configuredWasmBaseUrl) return
   configuredWasmBaseUrl = wasmBaseUrl.endsWith('/') ? wasmBaseUrl : `${wasmBaseUrl}/`
-  const wasm = env.backends.onnx.wasm
+  const onnx = env.backends.onnx as unknown as OrtRuntime
+  const wasm = onnx.wasm
   if (!wasm) throw new Error('ONNX WASM backend를 사용할 수 없습니다.')
   wasm.numThreads = 1
   wasm.proxy = false
+  // Transformers.js v4 uses the native C++ WebGPU EP. Safari follows the
+  // upstream standard-WASM path; other WebGPU browsers use Asyncify so CPU
+  // fallback operators can yield without blocking the Worker.
+  configuredRuntimeVariant = backend === 'webgpu' && !isSafariWebKit() ? 'asyncify' : 'standard'
+  const suffix = configuredRuntimeVariant === 'asyncify' ? '.asyncify' : ''
   wasm.wasmPaths = {
-    mjs: `${configuredWasmBaseUrl}ort-wasm-simd-threaded.mjs`,
-    wasm: `${configuredWasmBaseUrl}ort-wasm-simd-threaded.wasm`,
+    mjs: `${configuredWasmBaseUrl}ort-wasm-simd-threaded${suffix}.mjs`,
+    wasm: `${configuredWasmBaseUrl}ort-wasm-simd-threaded${suffix}.wasm`,
   }
 }
 
 async function webGpuDtype() {
-  const gpu = (navigator as unknown as { gpu?: { requestAdapter: () => Promise<{ features: Set<string> } | null> } }).gpu
-  const adapter = await gpu?.requestAdapter()
+  const gpu = (navigator as unknown as { gpu?: { requestAdapter: (options?: { powerPreference?: string }) => Promise<{ features: Set<string> } | null> } }).gpu
+  const adapter = await gpu?.requestAdapter({ powerPreference: 'high-performance' })
   if (!adapter) throw new Error('WebGPU adapter를 만들지 못했습니다.')
+  const webgpu = (env.backends.onnx as unknown as OrtRuntime).webgpu
+  if (webgpu) {
+    webgpu.adapter = adapter
+    webgpu.powerPreference = 'high-performance'
+  }
   return adapter.features.has('shader-f16') ? 'fp16' as const : 'fp32' as const
 }
 
 async function loadModel(requestId: string, backend: BrowserBackend) {
   const dtype = backend === 'webgpu' ? await webGpuDtype() : 'q8' as const
-  if (backend === 'webgpu') post('backend-info', requestId, { backend, dtype })
+  const ortVersion = (env.backends.onnx as unknown as OrtRuntime).versions?.web || 'unknown'
+  post('backend-info', requestId, { backend, dtype, runtime: backend === 'webgpu' ? 'native-webgpu-ep' : 'wasm', runtimeVariant: configuredRuntimeVariant, ortVersion })
   return KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
     dtype,
     device: backend,
@@ -64,7 +89,7 @@ async function loadModel(requestId: string, backend: BrowserBackend) {
 }
 
 function ensureModel(requestId: string, wasmBaseUrl = configuredWasmBaseUrl, preferredBackend: BrowserBackend = modelBackend || 'wasm') {
-  if (preferredBackend === 'wasm') configureRuntime(wasmBaseUrl)
+  configureRuntime(wasmBaseUrl, preferredBackend)
   if (!modelPromise) {
     modelBackend = preferredBackend
     modelPromise = loadModel(requestId, preferredBackend).catch((error) => {

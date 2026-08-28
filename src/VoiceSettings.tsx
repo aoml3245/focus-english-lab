@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowIcon, Brand } from './components'
-import { browserSupportsWebGPU, getActiveBrowserTTSBackend, getBrowserKokoroCacheState, getBrowserTTSFallbackReason, getVoiceProfile, hasLocalTtsServer, loadTTSBackendPreference, loadVoiceProfileId, playTTS, resolveTTSBackend, saveTTSBackendPreference, saveVoiceProfileId, stopTTS, VOICE_PROFILES, type TTSBackendPreference, type TTSProgressDetail, type VoiceProfileId } from './tts'
+import { browserSupportsWebGPU, getActiveBrowserTTSBackend, getBrowserKokoroCacheState, getBrowserTTSFallbackReason, getBrowserTTSRuntimeInfo, getVoiceProfile, hasLocalTtsServer, loadTTSBackendPreference, loadVoiceProfileId, playTTS, resolveTTSBackend, saveTTSBackendPreference, saveVoiceProfileId, stopTTS, VOICE_PROFILES, type TTSBackendPreference, type TTSProgressDetail, type VoiceProfileId } from './tts'
 
 const PREVIEW_TEXT = 'Student: I am trying to understand the new research schedule. Advisor: Let us review the evidence together before you make a decision.'
 
@@ -13,6 +13,7 @@ export default function VoiceSettings({ onBack }: { onBack: () => void }) {
   const [modelProgress, setModelProgress] = useState<TTSProgressDetail | null>(null)
   const [backendPreference, setBackendPreference] = useState<TTSBackendPreference>(loadTTSBackendPreference)
   const [firstAudioMs, setFirstAudioMs] = useState<number | null>(null)
+  const runtimeInfo = getBrowserTTSRuntimeInfo()
   useEffect(() => () => stopTTS(), [])
   useEffect(() => {
     if (localTts) return
@@ -70,11 +71,11 @@ export default function VoiceSettings({ onBack }: { onBack: () => void }) {
     <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 설정으로</button></header>
     <main>
       <div className="voice-hero"><div><h1>듣기 음성을 골라보세요.</h1><p>실제 학습 환경처럼 자연스러운 AI 음성과 여러 억양을 비교하고, Listening·Speaking에서 사용할 기본 음성을 정할 수 있습니다.</p></div><div className="voice-current"><span>현재 기본 음성</span><strong>{getVoiceProfile(selected).name}</strong><small>{getVoiceProfile(selected).accent}</small></div></div>
-      <div className="voice-notice"><strong>{localTts ? 'Kokoro 82M · 로컬 서버 실행 및 WAV 캐시' : 'Kokoro 82M · WebGPU(Metal) 우선 Worker'}</strong><p>{localTts ? '문장은 외부 음성 API로 전송되지 않습니다. 로컬 서버가 모델을 한 번만 실행하고 생성한 음성을 디스크에 저장하므로, 같은 문장과 화자는 다음부터 즉시 재생됩니다.' : '지원 기기에서는 Safari WebGPU를 통해 Apple GPU를 사용하고, 지원되지 않거나 초기화에 실패하면 기존 q8 WASM으로 자동 복귀합니다. 생성 음성은 이 브라우저에 최대 64MB 또는 200개까지만 보관합니다.'}</p></div>
+      <div className="voice-notice"><strong>{localTts ? 'Kokoro 82M · 로컬 서버 실행 및 WAV 캐시' : 'Kokoro 82M · Native WebGPU EP 우선 Worker'}</strong><p>{localTts ? '문장은 외부 음성 API로 전송되지 않습니다. 로컬 서버가 모델을 한 번만 실행하고 생성한 음성을 디스크에 저장하므로, 같은 문장과 화자는 다음부터 즉시 재생됩니다.' : '지원 기기에서는 JSEP가 아닌 ONNX Runtime의 native WebGPU EP로 Apple GPU를 사용하고, 지원되지 않거나 초기화에 실패하면 q8 WASM으로 자동 복귀합니다. 생성 음성은 이 브라우저에 최대 64MB 또는 200개까지만 보관합니다.'}</p></div>
       {!localTts && <section className="voice-backend" aria-label="브라우저 AI 실행 방식">
         <div className="voice-backend-head"><div><span>INFERENCE BACKEND</span><strong>이 기기: {browserSupportsWebGPU() ? 'WebGPU 사용 가능' : 'WebGPU 미지원 · WASM 사용'}</strong><small>현재 선택: {backendPreference === 'auto' ? `자동 (${resolveTTSBackend() === 'webgpu' ? 'WebGPU·Metal' : 'WASM'})` : backendPreference === 'webgpu' ? 'WebGPU·Metal' : 'WASM 호환'}{getActiveBrowserTTSBackend() ? ` · 실제 실행: ${getActiveBrowserTTSBackend() === 'webgpu' ? 'WebGPU·Metal' : 'WASM'}` : ''}</small></div>{firstAudioMs !== null && <em>첫 소리 {firstAudioMs.toLocaleString()}ms</em>}</div>
         <div className="voice-backend-options"><button className={backendPreference === 'auto' ? 'voice-backend-option voice-backend-option--active' : 'voice-backend-option'} onClick={() => chooseBackend('auto')}><strong>자동 권장</strong><span>가능하면 WebGPU, 실패하면 WASM</span></button><button className={backendPreference === 'webgpu' ? 'voice-backend-option voice-backend-option--active' : 'voice-backend-option'} disabled={!browserSupportsWebGPU()} onClick={() => chooseBackend('webgpu')}><strong>WebGPU · Metal</strong><span>iOS 26 Safari GPU · fp16 156MB / fp32 311MB</span></button><button className={backendPreference === 'wasm' ? 'voice-backend-option voice-backend-option--active' : 'voice-backend-option'} onClick={() => chooseBackend('wasm')}><strong>WASM 호환</strong><span>기존 CPU 추론 · q8 약 90MB</span></button></div>
-        <p>미리 듣기를 누른 뒤 <b>첫 소리</b> 시간이 표시되면 실제 체감 지연을 확인할 수 있습니다. WebGPU가 실패하면 WASM 전환이 표시되고 기존 모델로 자동 복귀합니다.{getBrowserTTSFallbackReason() && <> 최근 전환 이유: <code>{getBrowserTTSFallbackReason()}</code></>}</p>
+        <p>미리 듣기를 누른 뒤 <b>첫 소리</b> 시간이 표시되면 실제 체감 지연을 확인할 수 있습니다. WebGPU가 실패하면 WASM 전환이 표시되고 기존 모델로 자동 복귀합니다.{runtimeInfo && <> 런타임: <code>{runtimeInfo.runtime === 'native-webgpu-ep' ? 'Native WebGPU EP' : 'WASM'} · ORT {runtimeInfo.ortVersion} · {runtimeInfo.runtimeVariant} · {runtimeInfo.dtype}</code>.</>}{getBrowserTTSFallbackReason() && <> 최근 전환 이유: <code>{getBrowserTTSFallbackReason()}</code></>}</p>
       </section>}
       {!localTts && <section className="voice-download" aria-label="Kokoro 모델 저장 및 다운로드 상태">
         <div className="voice-download-head"><div><span>MODEL STORAGE</span><strong>{modelProgress?.phase === 'downloading' ? '모델 파일 다운로드 중' : modelProgress?.phase === 'loading-cache' ? '저장된 모델 읽는 중' : modelProgress?.phase === 'generating' ? 'AI 음성 생성 중' : modelProgress?.phase === 'playing' ? 'AI 음성 재생 중' : modelProgress?.phase === 'complete' || modelProgress?.phase === 'ready' ? 'Kokoro 82M 준비 완료' : cacheState === 'available' ? '이 브라우저에 모델 저장됨' : cacheState === 'missing' ? '아직 모델이 저장되지 않음' : cacheState === 'unsupported' ? '브라우저 저장소를 확인할 수 없음' : '브라우저 저장소 확인 중'}</strong></div><em className={cacheState === 'available' ? 'voice-cache-badge voice-cache-badge--ready' : 'voice-cache-badge'}>{cacheState === 'available' ? '캐시 확인됨' : cacheState === 'missing' ? '첫 사용 필요' : cacheState === 'unsupported' ? '확인 불가' : '확인 중'}</em></div>
