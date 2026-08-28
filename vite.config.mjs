@@ -13,4 +13,5 @@ function localTtsServer() {
 export default defineConfig({
   base: process.env.GITHUB_ACTIONS === 'true' ? '/focus-english-lab/' : '/',
   plugins: [react(), localTtsServer()],
+  worker: { format: 'es' },
 })

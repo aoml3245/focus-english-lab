@@ -10,13 +10,19 @@
   },
   "type": "module",
   "scripts": {
+    "prepare:ort": "node scripts/copy-ort-assets.mjs",
+    "predev": "npm run prepare:ort",
     "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "tts:download": "node server/download-tts-model.mjs",
+    "prebuild": "npm run prepare:ort",
     "build": "tsc -b && vite build",
+    "postbuild": "node scripts/remove-jsep-assets.mjs",
+    "prepreview": "npm run prepare:ort",
     "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
     "test": "vitest run"
   },
   "dependencies": {
+    "@huggingface/transformers": "3.8.1",
     "@vitejs/plugin-react": "latest",
     "kokoro-js": "^1.2.1",
     "react": "latest",

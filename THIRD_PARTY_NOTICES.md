@@ -29,8 +29,8 @@ The public repository does not include downloaded dictionary databases, research
 - License: Apache License 2.0
 - Usage: Listening and Speaking prompts can be synthesized locally in the browser with quantized ONNX weights. Model and voice files are downloaded on first use and retained by the browser cache when available.
 
-The repository does not redistribute Kokoro model weights. They are fetched from the model host at runtime under the model's own license.
+The repository does not redistribute Kokoro model weights. They are fetched from the model host at runtime under the model's own license. Browser builds copy the installed ONNX Runtime Web non-JSEP WASM runtime into the deployment during `npm run build`; its MIT license remains governed by the installed package notice.
 
 ## JavaScript packages
 
-React, React DOM, Vite and Vitest are MIT-licensed. `kokoro-js` and its Transformers runtime are Apache-2.0 licensed. Exact package versions and transitive dependencies are recorded in `package-lock.json`; installed package contents retain their own licenses and are not checked into this repository.
+React, React DOM, Vite, Vitest and ONNX Runtime Web are MIT-licensed. `kokoro-js` and its Transformers runtime are Apache-2.0 licensed. Exact package versions and transitive dependencies are recorded in `package-lock.json`; installed package contents retain their own licenses and are not checked into this repository.

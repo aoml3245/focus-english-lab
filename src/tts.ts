@@ -1,3 +1,5 @@
+import { cacheSpeech, readCachedSpeech } from './ttsAudioCache'
+
 export type VoiceProfileId = 'toefl-balanced' | 'us-female' | 'us-male' | 'uk-female' | 'uk-male' | 'system'
 
 export type VoiceProfile = {
@@ -43,7 +45,14 @@ const SPEAKER_RE = /(?:^|\s)([A-Z][A-Za-z ]{0,24}):\s*/g
 
 type ProgressHandler = (message: string, detail?: TTSProgressDetail) => void
 type PlayOptions = { maxWaitMs?: number }
-type BrowserKokoro = { generate: (text: string, options: { voice: string; speed?: number }) => Promise<{ toBlob: () => Blob }> }
+type BrowserSpeechPart = { text: string; voice: string }
+type WorkerRequest = {
+  chunks: Blob[]
+  resolve: (blobs: Blob[]) => void
+  reject: (error: Error) => void
+  onChunk?: (blob: Blob, index: number) => void
+  abort?: () => void
+}
 let activeAudio: HTMLAudioElement | null = null
 let activeUrls: string[] = []
 let playbackGeneration = 0
@@ -53,9 +62,13 @@ let examPrecacheGeneration = 0
 let activePlaybackController: AbortController | null = null
 let examPrecacheController: AbortController | null = null
 const pendingPlaybackRequests = new Set<AbortController>()
-let browserKokoroPromise: Promise<BrowserKokoro> | null = null
+const pendingSpeech = new Map<string, Promise<Blob[]>>()
+let browserKokoroWorker: Worker | null = null
+let browserKokoroPromise: Promise<void> | null = null
 const browserKokoroProgressHandlers = new Set<ProgressHandler>()
 let lastBrowserKokoroProgress: { message: string; detail: TTSProgressDetail } | null = null
+const workerRequests = new Map<string, WorkerRequest>()
+let workerRequestSequence = 0
 
 export function hasLocalTtsServer() {
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
@@ -129,7 +142,7 @@ function splitSpeakers(text: string) {
   }).filter((part) => part.text)
 }
 
-function chunkSpeechParts(parts: Array<{ text: string; speaker: number }>, maxLength = 360) {
+function chunkSpeechParts(parts: Array<{ text: string; speaker: number }>, maxLength = 120) {
   return parts.flatMap((part) => {
     if (part.text.length <= maxLength) return [part]
     const sentences = part.text.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((value) => value.trim()).filter(Boolean) || [part.text]
@@ -161,26 +174,85 @@ async function loadBrowserKokoro(onProgress: ProgressHandler, signal?: AbortSign
       browserKokoroPromise = (async () => {
         const cachedBeforeLoad = await getBrowserKokoroCacheState() === 'available'
         reportBrowserKokoroProgress(cachedBeforeLoad ? '저장된 Kokoro 82M을 브라우저 캐시에서 읽습니다…' : 'Kokoro 82M을 처음 다운로드합니다…', { phase: cachedBeforeLoad ? 'loading-cache' : 'downloading', percent: 0, cached: cachedBeforeLoad })
-        const { KokoroTTS } = await import('kokoro-js')
-        const model = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
-          dtype: 'q8',
-          device: 'wasm',
-          progress_callback: (progress: { status?: string; progress?: number; loaded?: number; total?: number; file?: string }) => {
-            if (progress.status !== 'progress' || !Number.isFinite(progress.progress)) return
-            const percent = Math.max(0, Math.min(100, Math.round(progress.progress || 0)))
-            const file = progress.file?.split('/').pop()
-            const phase = cachedBeforeLoad ? 'loading-cache' : 'downloading'
-            reportBrowserKokoroProgress(`${cachedBeforeLoad ? '브라우저 캐시 읽는 중' : 'Kokoro 82M 다운로드 중'}… ${percent}%`, { phase, percent, loadedBytes: progress.loaded, totalBytes: progress.total, file, cached: cachedBeforeLoad })
-          },
+        const worker = getBrowserKokoroWorker()
+        const requestId = `init-${++workerRequestSequence}`
+        await new Promise<void>((resolve, reject) => {
+          workerRequests.set(requestId, { chunks: [], resolve: () => resolve(), reject })
+          worker.postMessage({
+            type: 'init',
+            requestId,
+            wasmBaseUrl: new URL(`${import.meta.env.BASE_URL}ort/`, window.location.origin).href,
+          })
         })
-        reportBrowserKokoroProgress('Kokoro 82M 초기화를 마쳤습니다. 이제 음성을 생성할 수 있습니다.', { phase: 'ready', percent: 100, cached: true })
-        return model as BrowserKokoro
-      })().catch((error) => { browserKokoroPromise = null; lastBrowserKokoroProgress = null; throw error })
+        reportBrowserKokoroProgress('Kokoro 82M Worker 초기화를 마쳤습니다. 이제 음성을 생성할 수 있습니다.', { phase: 'ready', percent: 100, cached: true })
+      })().catch((error) => {
+        browserKokoroPromise = null
+        lastBrowserKokoroProgress = null
+        throw error
+      })
     } else if (lastBrowserKokoroProgress) onProgress(lastBrowserKokoroProgress.message, lastBrowserKokoroProgress.detail)
-    const model = await browserKokoroPromise
+    await browserKokoroPromise
     if (signal?.aborted) throw new DOMException('Audio preparation cancelled', 'AbortError')
-    return model
   } finally { browserKokoroProgressHandlers.delete(onProgress) }
+}
+
+function failWorker(error: Error) {
+  workerRequests.forEach((request) => request.reject(error))
+  workerRequests.clear()
+  browserKokoroWorker?.terminate()
+  browserKokoroWorker = null
+  browserKokoroPromise = null
+}
+
+function getBrowserKokoroWorker() {
+  if (browserKokoroWorker) return browserKokoroWorker
+  const worker = new Worker(new URL('./tts.worker.ts', import.meta.url), { type: 'module', name: 'focus-english-kokoro' })
+  worker.onmessage = (event: MessageEvent<{ type: string; requestId: string; blob?: Blob; index?: number; message?: string; percent?: number; loadedBytes?: number; totalBytes?: number; file?: string }>) => {
+    const message = event.data
+    const request = workerRequests.get(message.requestId)
+    if (message.type === 'progress') {
+      const cached = lastBrowserKokoroProgress?.detail.cached === true
+      const phase = cached ? 'loading-cache' : 'downloading'
+      reportBrowserKokoroProgress(`${cached ? '브라우저 캐시 읽는 중' : 'Kokoro 82M 다운로드 중'}… ${message.percent ?? 0}%`, { phase, percent: message.percent, loadedBytes: message.loadedBytes, totalBytes: message.totalBytes, file: message.file, cached })
+      return
+    }
+    if (!request) return
+    if (message.type === 'chunk' && message.blob) {
+      request.chunks.push(message.blob)
+      request.onChunk?.(message.blob, message.index ?? request.chunks.length - 1)
+      return
+    }
+    workerRequests.delete(message.requestId)
+    request.abort?.()
+    if (message.type === 'ready' || message.type === 'done') request.resolve(request.chunks)
+    else if (message.type === 'cancelled') request.reject(new DOMException('Audio request cancelled', 'AbortError'))
+    else request.reject(new Error(message.message || 'Kokoro Worker에서 음성을 만들지 못했습니다.'))
+  }
+  worker.onerror = () => failWorker(new Error('Kokoro 음성 Worker가 중단됐습니다.'))
+  browserKokoroWorker = worker
+  return worker
+}
+
+async function generateBrowserSpeech(parts: BrowserSpeechPart[], onProgress: ProgressHandler, signal: AbortSignal, onChunk?: (blob: Blob, index: number) => void) {
+  await loadBrowserKokoro(onProgress, signal)
+  if (signal.aborted) throw new DOMException('Audio request cancelled', 'AbortError')
+  const worker = getBrowserKokoroWorker()
+  const requestId = `speech-${++workerRequestSequence}`
+  return new Promise<Blob[]>((resolve, reject) => {
+    const abort = () => worker.postMessage({ type: 'cancel', requestId })
+    signal.addEventListener('abort', abort, { once: true })
+    workerRequests.set(requestId, {
+      chunks: [],
+      resolve,
+      reject,
+      onChunk: (blob, index) => {
+        onProgress(`브라우저 AI 음성 스트리밍 중… ${index + 1}`, { phase: 'generating', cached: true })
+        onChunk?.(blob, index)
+      },
+      abort: () => signal.removeEventListener('abort', abort),
+    })
+    worker.postMessage({ type: 'generate', requestId, parts })
+  })
 }
 
 function systemVoice() {
@@ -272,24 +344,23 @@ export async function prepareTTS(profileId: VoiceProfileId, onProgress: Progress
 }
 
 function speechKey(text: string, profile: VoiceProfile) {
-  return `${profile.id}:${profile.primary || 'system'}:${profile.secondary || ''}:${text}`
+  return `kokoro-q8-stream-v2:${profile.id}:${profile.primary || 'system'}:${profile.secondary || ''}:${text}`
 }
 
-async function synthesizeSpeech(text: string, profile: VoiceProfile, onProgress: ProgressHandler, signal: AbortSignal) {
+async function synthesizeSpeech(text: string, profile: VoiceProfile, onProgress: ProgressHandler, signal: AbortSignal, onChunk?: (blob: Blob, index: number) => void) {
   const parts = chunkSpeechParts(splitSpeakers(text))
+  if (!hasLocalTtsServer()) {
+    return generateBrowserSpeech(parts.map((part) => ({
+      text: part.text,
+      voice: part.speaker % 2 === 1 && profile.secondary ? profile.secondary : profile.primary!,
+    })), onProgress, signal, onChunk)
+  }
   const blobs: Blob[] = []
-  const browserModel = hasLocalTtsServer() ? null : await loadBrowserKokoro(onProgress, signal)
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index]
-    onProgress(`${browserModel ? '브라우저 AI 음성 생성 중' : '서버 음성 불러오는 중'}… ${index + 1}/${parts.length}`, browserModel ? { phase: 'generating', percent: Math.round((index / parts.length) * 100), cached: true } : undefined)
+    onProgress(`서버 음성 불러오는 중… ${index + 1}/${parts.length}`)
     const voice = part.speaker % 2 === 1 && profile.secondary ? profile.secondary : profile.primary!
     if (signal.aborted) throw new DOMException('Audio request cancelled', 'AbortError')
-    if (browserModel) {
-      const audio = await browserModel.generate(part.text, { voice, speed: 1 })
-      if (signal.aborted) throw new DOMException('Audio request cancelled', 'AbortError')
-      blobs.push(audio.toBlob())
-      continue
-    }
     const response = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: part.text, voice, speed: 1 }), signal })
     if (!response.ok) {
       const payload = await response.json().catch(() => ({})) as { error?: string }
@@ -300,21 +371,36 @@ async function synthesizeSpeech(text: string, profile: VoiceProfile, onProgress:
   return blobs
 }
 
-function getSpeech(text: string, profile: VoiceProfile, onProgress: ProgressHandler, controller: AbortController, source: 'playback' | 'precache') {
+async function getSpeech(text: string, profile: VoiceProfile, onProgress: ProgressHandler, controller: AbortController, source: 'playback' | 'precache', onChunk?: (blob: Blob, index: number) => void) {
   const key = speechKey(text, profile)
   const cached = speechCache.get(key)
   if (cached) {
     speechCache.delete(key)
     speechCache.set(key, cached)
-    return Promise.resolve(cached)
+    return cached
   }
+  if (!hasLocalTtsServer()) {
+    const persisted = await readCachedSpeech(key)
+    if (persisted?.length) {
+      speechCache.set(key, persisted)
+      return persisted
+    }
+  }
+  const pending = pendingSpeech.get(key)
+  if (pending) return pending
   if (source === 'playback') pendingPlaybackRequests.add(controller)
-  return synthesizeSpeech(text, profile, onProgress, controller.signal).then((blobs) => {
+  const synthesis = synthesizeSpeech(text, profile, onProgress, controller.signal, onChunk).then(async (blobs) => {
       if (controller.signal.aborted) throw new DOMException('Audio request cancelled', 'AbortError')
       speechCache.set(key, blobs)
       while (speechCache.size > MAX_CACHED_SPEECHES) speechCache.delete(speechCache.keys().next().value!)
+      if (!hasLocalTtsServer()) await cacheSpeech(key, blobs)
       return blobs
-    }).finally(() => { if (source === 'playback') pendingPlaybackRequests.delete(controller) })
+    }).finally(() => {
+      pendingSpeech.delete(key)
+      if (source === 'playback') pendingPlaybackRequests.delete(controller)
+    })
+  pendingSpeech.set(key, synthesis)
+  return synthesis
 }
 
 export async function prepareExamTTS(texts: string[], profileId: VoiceProfileId, onProgress: ProgressHandler) {
@@ -354,19 +440,45 @@ function playElement(audio: HTMLAudioElement, generation: number, signal: AbortS
 }
 
 async function speakWithKokoro(text: string, profile: VoiceProfile, onProgress: ProgressHandler, controller: AbortController, generation: number, maxWaitMs?: number) {
-  const speech = getSpeech(text, profile, onProgress, controller, 'playback')
-  const blobs = maxWaitMs
-    ? await Promise.race<Blob[] | null>([speech, new Promise<null>((resolve) => window.setTimeout(() => resolve(null), maxWaitMs))])
-    : await speech
-  if (controller.signal.aborted || generation !== playbackGeneration) return
-  if (!blobs) return false
-  const clips: HTMLAudioElement[] = []
-  for (const blob of blobs) {
-    const url = URL.createObjectURL(blob)
-    activeUrls.push(url)
-    clips.push(new Audio(url))
+  const generationController = new AbortController()
+  const cancelGeneration = () => generationController.abort()
+  controller.signal.addEventListener('abort', cancelGeneration, { once: true })
+  let streamedChunks = 0
+  let firstChunkResolve: (() => void) | null = null
+  const firstChunk = new Promise<void>((resolve) => { firstChunkResolve = resolve })
+  let playbackChain = Promise.resolve()
+  const queueChunk = (blob: Blob) => {
+    streamedChunks += 1
+    firstChunkResolve?.()
+    firstChunkResolve = null
+    playbackChain = playbackChain.then(async () => {
+      if (controller.signal.aborted || generation !== playbackGeneration) return
+      const url = URL.createObjectURL(blob)
+      activeUrls.push(url)
+      await playElement(new Audio(url), generation, controller.signal, onProgress)
+    })
   }
-  for (const clip of clips) await playElement(clip, generation, controller.signal, onProgress)
+  const speech = getSpeech(text, profile, onProgress, generationController, 'playback', queueChunk)
+  if (maxWaitMs) {
+    const startState = await Promise.race<'started' | 'complete' | 'timeout'>([
+      firstChunk.then(() => 'started'),
+      speech.then(() => 'complete'),
+      new Promise<'timeout'>((resolve) => window.setTimeout(() => resolve('timeout'), maxWaitMs)),
+    ])
+    if (startState === 'timeout') {
+      generationController.abort()
+      void speech.catch(() => undefined)
+      controller.signal.removeEventListener('abort', cancelGeneration)
+      return false
+    }
+  }
+  const blobs = await speech
+  if (controller.signal.aborted || generation !== playbackGeneration) return
+  if (!streamedChunks) {
+    for (const blob of blobs) queueChunk(blob)
+  }
+  await playbackChain
+  controller.signal.removeEventListener('abort', cancelGeneration)
   releaseAudio()
   return true
 }

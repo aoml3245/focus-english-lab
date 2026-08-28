@@ -12,3 +12,4 @@ scripts/data/
 .vite/
 coverage/
 .cache/
+public/ort/
