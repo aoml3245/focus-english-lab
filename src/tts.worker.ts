@@ -58,12 +58,7 @@ function ensureModel(requestId: string, wasmBaseUrl = configuredWasmBaseUrl, pre
   configureRuntime(wasmBaseUrl)
   if (!modelPromise) {
     modelBackend = preferredBackend
-    modelPromise = loadModel(requestId, preferredBackend).catch(async (error) => {
-      if (preferredBackend === 'webgpu') {
-        post('backend-fallback', requestId, { message: error instanceof Error ? error.message : String(error), backend: 'wasm' })
-        modelBackend = 'wasm'
-        return loadModel(requestId, 'wasm')
-      }
+    modelPromise = loadModel(requestId, preferredBackend).catch((error) => {
       modelPromise = null
       modelBackend = null
       throw error

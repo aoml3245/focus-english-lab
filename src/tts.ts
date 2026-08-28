@@ -216,17 +216,28 @@ async function loadBrowserKokoro(onProgress: ProgressHandler, signal?: AbortSign
       browserKokoroPromise = (async () => {
         const cachedBeforeLoad = await getBrowserKokoroCacheState() === 'available'
         reportBrowserKokoroProgress(cachedBeforeLoad ? '저장된 Kokoro 82M을 브라우저 캐시에서 읽습니다…' : 'Kokoro 82M을 처음 다운로드합니다…', { phase: cachedBeforeLoad ? 'loading-cache' : 'downloading', percent: 0, cached: cachedBeforeLoad })
-        const worker = getBrowserKokoroWorker()
-        const requestId = `init-${++workerRequestSequence}`
-        await new Promise<void>((resolve, reject) => {
-          workerRequests.set(requestId, { chunks: [], resolve: () => resolve(), reject })
-          worker.postMessage({
-            type: 'init',
-            requestId,
-            backend: requestedBackend,
-            wasmBaseUrl: new URL(`${import.meta.env.BASE_URL}ort/`, window.location.origin).href,
+        const initializeBackend = async (backend: 'webgpu' | 'wasm') => {
+          const worker = getBrowserKokoroWorker()
+          const requestId = `init-${++workerRequestSequence}`
+          await new Promise<void>((resolve, reject) => {
+            workerRequests.set(requestId, { chunks: [], resolve: () => resolve(), reject })
+            worker.postMessage({
+              type: 'init',
+              requestId,
+              backend,
+              wasmBaseUrl: new URL(`${import.meta.env.BASE_URL}ort/`, window.location.origin).href,
+            })
           })
-        })
+        }
+        try { await initializeBackend(requestedBackend) }
+        catch (error) {
+          if (requestedBackend !== 'webgpu') throw error
+          browserKokoroWorker?.terminate()
+          browserKokoroWorker = null
+          activeBrowserBackend = null
+          reportBrowserKokoroProgress('WebGPU 초기화에 실패해 새 Worker에서 q8 WASM 호환 모드로 전환합니다…', { phase: 'initializing', percent: 0, backend: 'wasm' })
+          await initializeBackend('wasm')
+        }
         const backend = activeBrowserBackend || requestedBackend
         reportBrowserKokoroProgress(`Kokoro 82M ${backend === 'webgpu' ? 'WebGPU(Metal)' : 'WASM'} 초기화를 마쳤습니다.`, { phase: 'ready', percent: 100, cached: true, backend })
       })().catch((error) => {
