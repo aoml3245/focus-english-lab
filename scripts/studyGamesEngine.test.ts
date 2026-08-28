@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LearningEntry } from '../src/learning'
-import { buildStudyQuestions, isObjectiveAnswerCorrect } from '../src/studyGamesEngine'
+import { buildStudyQuestions, isObjectiveAnswerCorrect, selectStudyEntries } from '../src/studyGamesEngine'
 
 const entry = (word: string, extra: Partial<LearningEntry> = {}): LearningEntry => ({
   word, meaningKo: `${word} 뜻`, meaningEn: `${word} definition`, partOfSpeech: 'noun', cefr: 'B2', ipa: '', synonyms: [`${word}-similar`],
@@ -9,6 +9,13 @@ const entry = (word: string, extra: Partial<LearningEntry> = {}): LearningEntry 
 const entries = [entry('alpha'), entry('beta'), entry('gamma'), entry('delta'), entry('epsilon'), entry('zeta')]
 
 describe('study game question generation', () => {
+  it('selects a filtered memorization cohort before the quiz', () => {
+    const cohort = selectStudyEntries(entries, 3, { level: 'B2', academicOnly: true }, () => 0.42)
+    expect(cohort).toHaveLength(3)
+    expect(cohort.every((item) => item.cefr === 'B2' && item.academicCore)).toBe(true)
+    expect(new Set(cohort.map((item) => item.word)).size).toBe(3)
+  })
+
   it('mixes recall, synonym, and spelling tasks without duplicate words', () => {
     const questions = buildStudyQuestions(entries, 'vocabulary', 6, { level: 'B2', academicOnly: true }, () => 0.42)
     expect(questions).toHaveLength(6)

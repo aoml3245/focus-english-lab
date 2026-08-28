@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowIcon, Brand } from './components'
 import { loadFavorites, requestVocabulary, type LearningEntry } from './learning'
 import { evaluateStudyAnswer, type StudyAnswerFeedback } from './studyGameCoach'
-import { buildStudyQuestions, isObjectiveAnswerCorrect, type StudyGame, type StudyQuestion } from './studyGamesEngine'
+import { buildStudyQuestions, isObjectiveAnswerCorrect, selectStudyEntries, type StudyGame, type StudyQuestion } from './studyGamesEngine'
 
 const LEVELS = ['All', 'B1', 'B2', 'C1', 'C2']
 const SIZES = [10, 20, 30]
+const MEMORIZATION_SIZE = 100
+const DECK_PAGE_SIZE = 10
 
 type Judgment = 'correct' | 'retry' | null
 
@@ -26,6 +28,10 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
   const [academicOnly, setAcademicOnly] = useState(true)
   const [savedOnly, setSavedOnly] = useState(false)
   const [questions, setQuestions] = useState<StudyQuestion[]>([])
+  const [studyDeck, setStudyDeck] = useState<LearningEntry[]>([])
+  const [memorizing, setMemorizing] = useState(false)
+  const [deckPage, setDeckPage] = useState(0)
+  const [deckRound, setDeckRound] = useState(1)
   const [index, setIndex] = useState(0)
   const [response, setResponse] = useState('')
   const [revealed, setRevealed] = useState(false)
@@ -53,9 +59,19 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
   const resetAnswer = () => { evaluationRequest.current += 1; setResponse(''); setRevealed(false); setJudgment(null); setEvaluating(false); setFeedback(null); setFeedbackError('') }
   const start = () => {
     const next = buildStudyQuestions(vocabulary, game, size, { level, academicOnly, savedWords: savedOnly ? favorites : undefined })
-    setQuestions(next); setIndex(0); setCorrect(0); resetAnswer()
+    setStudyDeck([]); setMemorizing(false); setQuestions(next); setIndex(0); setCorrect(0); resetAnswer()
   }
-  const restartSetup = () => { setQuestions([]); setIndex(0); setCorrect(0); resetAnswer() }
+  const startMemorizing = () => {
+    const deck = selectStudyEntries(vocabulary, MEMORIZATION_SIZE, { level, academicOnly, savedWords: savedOnly ? favorites : undefined })
+    setStudyDeck(deck); setMemorizing(true); setDeckPage(0); setDeckRound(1); setQuestions([]); setIndex(0); setCorrect(0); resetAnswer()
+  }
+  const startDeckQuiz = () => {
+    const next = buildStudyQuestions(studyDeck, 'vocabulary', studyDeck.length, { level: 'All', academicOnly: false })
+    setMemorizing(false); setQuestions(next); setIndex(0); setCorrect(0); resetAnswer()
+  }
+  const repeatDeckStudy = () => { setDeckRound((value) => value + 1); setMemorizing(true); setDeckPage(0); setQuestions([]); setIndex(0); setCorrect(0); resetAnswer() }
+  const repeatDeckQuiz = () => { setDeckRound((value) => value + 1); startDeckQuiz() }
+  const restartSetup = () => { setStudyDeck([]); setMemorizing(false); setDeckPage(0); setDeckRound(1); setQuestions([]); setIndex(0); setCorrect(0); resetAnswer() }
   const question = questions[index]
   const finished = questions.length > 0 && index >= questions.length
 
@@ -91,7 +107,7 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
   return <div className="study-page">
     <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header>
     <main>
-      {!questions.length ? <>
+      {memorizing ? <MemorizationDeck entries={studyDeck} page={deckPage} round={deckRound} onPage={setDeckPage} onStartQuiz={startDeckQuiz} /> : !questions.length ? <>
         <section className="study-hero"><span>VOCABULARY LAB</span><h1>외우는 대신,<br />꺼내 쓰는 연습.</h1><p>29,976개 단어장에서 뜻과 동의어를 확인하고, 문제 문맥 문장으로 해석과 영작을 연습합니다. 답은 언제든 바로 볼 수 있습니다.</p></section>
         <section className="study-mode-grid" aria-label="학습 게임 선택">
           <button className={game === 'vocabulary' ? 'study-mode study-mode--active' : 'study-mode'} onClick={() => setGame('vocabulary')}><span>01</span><strong>단어 시험</strong><p>뜻 입력 · 동의어 선택 · 철자 회상</p></button>
@@ -105,11 +121,22 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
             <button className={academicOnly ? 'study-toggle study-toggle--active' : 'study-toggle'} onClick={() => setAcademicOnly((value) => !value)}>학술 핵심</button>
             <button className={savedOnly ? 'study-toggle study-toggle--active' : 'study-toggle'} onClick={() => setSavedOnly((value) => !value)}>저장한 단어만</button>
           </div>
-          <div className="study-start"><span>{vocabulary.length ? `${available.toLocaleString('en-US')}개 출제 가능` : loadError || '단어장을 불러오는 중입니다.'}</span><button className="button button--primary button--large" disabled={!available} onClick={start}>게임 시작 <ArrowIcon /></button></div>
+          <div className="study-start"><span>{vocabulary.length ? `${available.toLocaleString('en-US')}개 출제 가능` : loadError || '단어장을 불러오는 중입니다.'}</span><div className="study-start-actions">{game === 'vocabulary' && <button className="button button--secondary button--large" disabled={!available} onClick={startMemorizing}>100개 먼저 외우기</button>}<button className="button button--primary button--large" disabled={!available} onClick={start}>바로 게임 시작 <ArrowIcon /></button></div></div>
         </section>
-      </> : finished ? <section className="study-finish"><span>SESSION COMPLETE</span><h1>{correct} / {questions.length}</h1><p>맞았다고 표시한 문항과 자동 채점 결과를 합산했습니다. 애매했던 답은 다시 풀면서 회상 간격을 좁혀 보세요.</p><div><button className="button button--secondary button--large" onClick={restartSetup}>설정 바꾸기</button><button className="button button--primary button--large" onClick={start}>새 문제 다시 풀기 <ArrowIcon /></button></div></section> : question && <StudyRound question={question} index={index} total={questions.length} response={response} setResponse={setResponse} revealed={revealed} judgment={judgment} correct={correct} feedback={feedback} feedbackError={feedbackError} evaluating={evaluating} onReveal={reveal} onJudge={judge} onNext={next} onEvaluate={evaluate} />}
+      </> : finished ? <section className="study-finish"><span>{studyDeck.length ? `MEMORY ROUND ${deckRound}` : 'SESSION COMPLETE'}</span><h1>{correct} / {questions.length}</h1><p>{studyDeck.length ? `방금 외운 ${studyDeck.length}개 단어의 회상 결과입니다. 같은 묶음을 다시 보거나 바로 재시험하면서 기억이 안정될 때까지 반복하세요.` : '맞았다고 표시한 문항과 자동 채점 결과를 합산했습니다. 애매했던 답은 다시 풀면서 회상 간격을 좁혀 보세요.'}</p>{studyDeck.length ? <div className="study-finish-actions"><button className="button button--secondary button--large" onClick={repeatDeckStudy}>같은 {studyDeck.length}개 다시 외우기</button><button className="button button--secondary button--large" onClick={repeatDeckQuiz}>같은 단어 재시험</button><button className="button button--primary button--large" onClick={startMemorizing}>새로운 100개 학습 <ArrowIcon /></button><button className="text-button" onClick={restartSetup}>설정으로 돌아가기</button></div> : <div><button className="button button--secondary button--large" onClick={restartSetup}>설정 바꾸기</button><button className="button button--primary button--large" onClick={start}>새 문제 다시 풀기 <ArrowIcon /></button></div>}</section> : question && <StudyRound question={question} index={index} total={questions.length} response={response} setResponse={setResponse} revealed={revealed} judgment={judgment} correct={correct} feedback={feedback} feedbackError={feedbackError} evaluating={evaluating} onReveal={reveal} onJudge={judge} onNext={next} onEvaluate={evaluate} />}
     </main>
   </div>
+}
+
+function MemorizationDeck({ entries, page, round, onPage, onStartQuiz }: { entries: LearningEntry[]; page: number; round: number; onPage: (page: number) => void; onStartQuiz: () => void }) {
+  const pages = Math.max(1, Math.ceil(entries.length / DECK_PAGE_SIZE))
+  const visible = entries.slice(page * DECK_PAGE_SIZE, (page + 1) * DECK_PAGE_SIZE)
+  return <section className="memorization-deck">
+    <div className="memorization-head"><div><span>MEMORY ROUND {round}</span><h1>{entries.length}개를 먼저 익혀보세요.</h1><p>10개씩 뜻·동의어·예문을 확인하세요. 정해진 시간은 없고, 준비됐을 때 시험을 시작하면 됩니다.</p></div><strong>{page + 1} / {pages}</strong></div>
+    <div className="memorization-progress"><i style={{ width: `${((page + 1) / pages) * 100}%` }} /></div>
+    <div className="memorization-grid">{visible.map((entry, index) => <article key={entry.word}><span>{page * DECK_PAGE_SIZE + index + 1}</span><div><h2>{entry.word}</h2><small>{entry.partOfSpeech} · {entry.cefr}</small></div><strong>{entry.meaningKo}</strong><p>{entry.synonyms.slice(0, 3).join(' · ') || entry.meaningEn}</p><blockquote>{entry.example}<small>{entry.translation}</small></blockquote></article>)}</div>
+    <div className="memorization-actions"><button className="button button--secondary button--large" disabled={page === 0} onClick={() => onPage(page - 1)}><ArrowIcon direction="left" /> 이전 10개</button>{page + 1 < pages ? <button className="button button--primary button--large" onClick={() => onPage(page + 1)}>다음 10개 <ArrowIcon /></button> : <button className="button button--primary button--large" onClick={onStartQuiz}>{entries.length}문항 시험 시작 <ArrowIcon /></button>}</div>
+  </section>
 }
 
 function StudyRound({ question, index, total, response, setResponse, revealed, judgment, correct, feedback, feedbackError, evaluating, onReveal, onJudge, onNext, onEvaluate }: { question: StudyQuestion; index: number; total: number; response: string; setResponse: (value: string) => void; revealed: boolean; judgment: Judgment; correct: number; feedback: StudyAnswerFeedback | null; feedbackError: string; evaluating: boolean; onReveal: (answer?: string) => void; onJudge: (value: Exclude<Judgment, null>) => void; onNext: () => void; onEvaluate: () => void }) {

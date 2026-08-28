@@ -33,6 +33,16 @@ const eligible = (entry: LearningEntry, filter: StudyGameFilter) =>
   (!filter.academicOnly || Boolean(entry.academicCore)) &&
   (!filter.savedWords || filter.savedWords.has(entry.word))
 
+export function selectStudyEntries(
+  entries: LearningEntry[],
+  size: number,
+  filter: StudyGameFilter,
+  random: () => number = Math.random,
+) {
+  const filtered = entries.filter((entry) => eligible(entry, filter))
+  return shuffle(filtered, random).slice(0, Math.min(size, filtered.length))
+}
+
 function synonymOptions(entry: LearningEntry, pool: LearningEntry[], random: () => number) {
   const answer = entry.synonyms[0]
   const distractors = shuffle(
@@ -77,4 +87,3 @@ export function isObjectiveAnswerCorrect(question: StudyQuestion, response: stri
   if (question.task !== 'spelling' && question.task !== 'synonym') return null
   return normalizeSpelling(response) === normalizeSpelling(question.answer)
 }
-
