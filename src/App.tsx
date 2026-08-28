@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { AudioPrompt, ArrowIcon, Brand, HOME_NAVIGATION_EVENT, Recorder, Timer } from './components'
 import { CONTEXT_TOPIC_COUNT, SECTION_META } from './data'
+import ExamData from './ExamData'
 import { buildFullPracticeSetFrom, buildSectionPracticeFrom, buildTaskPracticeFrom, countBySectionFrom, getActiveExamPackInfo, getActivePracticeItems, getAvailablePracticeItems, getPracticeTaskTypesFrom } from './examPack'
 import { displayAnswer, getSessionStats, isCorrect } from './review'
 import { finishSession, loadActive, loadExcludedItemIds, loadHistory, saveActive, setSessionRandomEligibility } from './storage'
@@ -14,7 +15,6 @@ const Settings = lazy(() => import('./Settings'))
 const ReadingAssistant = lazy(() => import('./ReadingAssistant'))
 const WritingCoach = lazy(() => import('./WritingCoach'))
 const History = lazy(() => import('./History'))
-const ExamData = lazy(() => import('./ExamData'))
 type Screen = 'home' | 'section-select' | 'task-select' | 'intro' | 'test' | 'result' | 'vocabulary' | 'study-games' | 'settings' | 'voice-settings' | 'history' | 'exam-data'
 type AppNavigationState = { focusEnglishLab: true; screen: Screen; historySessionId?: string | null; resultId?: string | null; practiceSection?: Section | null }
 const PRACTICE_ITEMS = getActivePracticeItems()
@@ -167,9 +167,9 @@ function App() {
   if (screen === 'home') return <Home session={session} poolMessage={poolMessage} onStudy={() => begin(buildFullPracticeSetFrom(PRACTICE_ITEMS, loadExcludedItemIds()), 'study')} onMock={() => begin(buildFullPracticeSetFrom(PRACTICE_ITEMS, loadExcludedItemIds()), 'mock')} onResume={resume} onSections={() => navigate('section-select')} onVocabulary={() => navigate('vocabulary')} onStudyGames={() => navigate('study-games')} onSettings={() => navigate('settings')} onExamData={() => navigate('exam-data')} onHistory={openHistory} />
   if (screen === 'vocabulary') return <Suspense fallback={<div className="route-loading">단어장을 불러오는 중입니다…</div>}><Vocabulary onBack={goBack} /></Suspense>
   if (screen === 'study-games') return <Suspense fallback={<div className="route-loading">학습 게임을 준비하는 중입니다…</div>}><StudyGames onBack={goBack} /></Suspense>
-  if (screen === 'settings') return <Suspense fallback={<div className="route-loading">설정을 불러오는 중입니다…</div>}><Settings onBack={goBack} onVoiceSettings={() => navigate('voice-settings')} /></Suspense>
+  if (screen === 'settings') return <Suspense fallback={<div className="route-loading">설정을 불러오는 중입니다…</div>}><Settings onBack={goBack} onVoiceSettings={() => navigate('voice-settings')} onExamData={() => navigate('exam-data')} /></Suspense>
   if (screen === 'voice-settings') return <Suspense fallback={<div className="route-loading">음성 설정을 불러오는 중입니다…</div>}><VoiceSettings onBack={goBack} /></Suspense>
-  if (screen === 'exam-data') return <Suspense fallback={<div className="route-loading">시험 데이터를 불러오는 중입니다…</div>}><ExamData onBack={goBack} onActivate={() => { window.history.replaceState({ focusEnglishLab: true, screen: 'home' } satisfies AppNavigationState, '', routeUrl('home')); window.location.reload() }} /></Suspense>
+  if (screen === 'exam-data') return <ExamData onBack={goBack} onActivate={() => { window.history.replaceState({ focusEnglishLab: true, screen: 'home' } satisfies AppNavigationState, '', routeUrl('home')); window.location.reload() }} />
   if (screen === 'history') return <Suspense fallback={<div className="route-loading">학습 기록을 불러오는 중입니다…</div>}><History initialSessionId={historySessionId} onBack={goBack} /></Suspense>
   if (screen === 'section-select') return <SectionSelect onBack={goBack} onSelect={(section) => navigate('task-select', { practiceSection: section })} />
   if (screen === 'task-select') return practiceSection ? <TaskSelect section={practiceSection} onBack={goBack} onSelectAll={() => begin(buildSectionPracticeFrom(PRACTICE_ITEMS, practiceSection, loadExcludedItemIds()), 'section', `${SECTION_META[practiceSection].label} 전체 유형`)} onSelectTask={(taskTitle, taskLabel) => begin(buildTaskPracticeFrom(PRACTICE_ITEMS, practiceSection, taskTitle, loadExcludedItemIds()), 'section', `${SECTION_META[practiceSection].label} · ${taskLabel}`)} /> : <SectionSelect onBack={goBack} onSelect={(section) => navigate('task-select', { practiceSection: section })} />

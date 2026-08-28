@@ -9,7 +9,7 @@ import { APP_VERSION } from './version'
 const EMPTY_CACHE: TtsAudioCacheStats = { entries: 0, bytes: 0 }
 const formatMegabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(bytes ? 1 : 0)} MB`
 
-export default function Settings({ onBack, onVoiceSettings }: { onBack: () => void; onVoiceSettings: () => void }) {
+export default function Settings({ onBack, onVoiceSettings, onExamData }: { onBack: () => void; onVoiceSettings: () => void; onExamData: () => void }) {
   const [readingConfig, setReadingConfig] = useState<LocalLlmConfig>(loadLocalLlmConfig)
   const [readingModels, setReadingModels] = useState<string[]>([])
   const [readingStatus, setReadingStatus] = useState('읽기 도우미에서 단어 뜻과 문장 해석에 사용합니다.')
@@ -105,7 +105,11 @@ export default function Settings({ onBack, onVoiceSettings }: { onBack: () => vo
       </section>
 
       <section className="settings-section">
-        <div className="settings-section-head"><div><span>04</span><h2>브라우저 저장공간</h2><p>생성된 음성만 제한된 용량으로 저장합니다. Kokoro 모델과 학습 기록은 이 버튼으로 지우지 않습니다.</p></div><button className="button button--secondary" onClick={clearCache} disabled={cacheBusy || cache.entries === 0}>{cacheBusy ? '확인 중…' : '생성 음성 비우기'}</button></div>
+        <div className="settings-section-head"><div><span>04</span><h2>시험 데이터 관리</h2><p>문제 파일을 불러오거나 현재 문제은행을 다른 기기로 옮길 수 있습니다.</p></div><button className="button button--primary" onClick={onExamData}>시험 데이터 열기 <ArrowIcon /></button></div>
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-section-head"><div><span>05</span><h2>브라우저 저장공간</h2><p>생성된 음성만 제한된 용량으로 저장합니다. Kokoro 모델과 학습 기록은 이 버튼으로 지우지 않습니다.</p></div><button className="button button--secondary" onClick={clearCache} disabled={cacheBusy || cache.entries === 0}>{cacheBusy ? '확인 중…' : '생성 음성 비우기'}</button></div>
         <div className="settings-cache-meter"><div><strong>{formatMegabytes(cache.bytes)}</strong><span> / {formatMegabytes(TTS_AUDIO_CACHE_MAX_BYTES)}</span></div><div className="settings-meter" aria-label="생성 음성 캐시 사용량"><span style={{ width: `${Math.min(100, cache.bytes / TTS_AUDIO_CACHE_MAX_BYTES * 100)}%` }} /></div><small>{cache.entries} / {TTS_AUDIO_CACHE_MAX_ENTRIES}개 · {cacheMessage}</small></div>
       </section>
 
