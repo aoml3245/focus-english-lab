@@ -45,4 +45,5 @@ export interface SavedSession {
   mode?: PracticeMode
   reviewedItemIds?: string[]
   randomEligible?: boolean
+  practiceLabel?: string
 }

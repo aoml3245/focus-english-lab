@@ -102,6 +102,63 @@ const pick = (bank: BaseItem[], test: (item: BaseItem) => boolean, count: number
 const title = (value: string) => (item: BaseItem) => item.title === value
 const NO_EXCLUSIONS = new Set<string>()
 
+export type PracticeTaskType = { title: string; label: string; description: string; candidateCount: number; setSize: number }
+
+const TASK_META: Record<string, { label: string; description: string; setSize: number }> = {
+  'Complete the Words': { label: 'Complete the Words', description: '문맥과 철자를 이용해 빠진 글자를 완성합니다.', setSize: 6 },
+  'Read in Daily Life': { label: 'Read in Daily Life', description: '공지·안내·메시지 같은 실용문을 읽고 답합니다.', setSize: 10 },
+  'Read an Academic Passage': { label: 'Read an Academic Passage', description: '학술 지문의 핵심 내용과 추론을 연습합니다.', setSize: 10 },
+  'Listen and Choose a Response': { label: 'Choose a Response', description: '짧은 질문을 듣고 가장 자연스러운 응답을 고릅니다.', setSize: 10 },
+  'Listen to a Conversation': { label: 'Conversation', description: '캠퍼스 대화의 목적·문제·해결책을 파악합니다.', setSize: 8 },
+  'Listen to an Announcement': { label: 'Announcement', description: '공지의 변경 사항과 필요한 행동을 파악합니다.', setSize: 8 },
+  'Listen to an Academic Talk': { label: 'Academic Talk', description: '강의의 중심 생각·세부 정보·관계를 듣습니다.', setSize: 8 },
+  'Build a Sentence': { label: 'Build a Sentence', description: '섞인 단어와 짧은 구를 문법에 맞게 배열합니다.', setSize: 10 },
+  'Write an Email': { label: 'Write an Email', description: '목적·상황·요청을 갖춘 이메일을 작성합니다.', setSize: 3 },
+  'Write for an Academic Discussion': { label: 'Academic Discussion', description: '입장과 근거를 제시하고 다른 의견에 기여합니다.', setSize: 2 },
+  'Listen and Repeat': { label: 'Listen and Repeat', description: '문장을 듣고 준비 시간 없이 그대로 말합니다.', setSize: 10 },
+  'Take an Interview': { label: 'Take an Interview', description: '면접형 질문을 듣고 충분한 길이로 답합니다.', setSize: 6 },
+}
+
+const fallbackTaskDescription = (kind: ItemKind) => ({
+  'complete-words': '문맥 속 단어 완성 유형을 연습합니다.',
+  'multiple-choice': '지문을 읽고 객관식 질문에 답합니다.',
+  'listen-choice': '음성을 듣고 객관식 질문에 답합니다.',
+  'sentence-build': '문장 구성 유형을 연습합니다.',
+  email: '이메일 쓰기 유형을 연습합니다.',
+  discussion: '학술 토론 쓰기 유형을 연습합니다.',
+  repeat: '듣고 따라 말하기 유형을 연습합니다.',
+  interview: '인터뷰 말하기 유형을 연습합니다.',
+})[kind]
+
+export function getPracticeTaskTypesFrom(bank: BaseItem[], section: Section, excludedIds: ReadonlySet<string> = NO_EXCLUSIONS): PracticeTaskType[] {
+  const grouped = new Map<string, { count: number; kind: ItemKind }>()
+  for (const item of bank) {
+    if (item.section !== section || excludedIds.has(item.id)) continue
+    const current = grouped.get(item.title)
+    grouped.set(item.title, { count: (current?.count || 0) + 1, kind: item.kind })
+  }
+  return [...grouped.entries()].map(([taskTitle, value]) => {
+    const meta = TASK_META[taskTitle]
+    return {
+      title: taskTitle,
+      label: meta?.label || taskTitle,
+      description: meta?.description || fallbackTaskDescription(value.kind),
+      candidateCount: value.count,
+      setSize: Math.min(value.count, meta?.setSize || 10),
+    }
+  }).sort((a, b) => {
+    const knownTitles = Object.keys(TASK_META)
+    const aIndex = knownTitles.indexOf(a.title)
+    const bIndex = knownTitles.indexOf(b.title)
+    return (aIndex < 0 ? Number.MAX_SAFE_INTEGER : aIndex) - (bIndex < 0 ? Number.MAX_SAFE_INTEGER : bIndex) || a.label.localeCompare(b.label)
+  })
+}
+
+export function buildTaskPracticeFrom(bank: BaseItem[], section: Section, taskTitle: string, excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) {
+  const task = getPracticeTaskTypesFrom(bank, section, excludedIds).find((candidate) => candidate.title === taskTitle)
+  return task ? pick(bank, (item) => item.section === section && item.title === taskTitle, task.setSize, excludedIds) : []
+}
+
 export const buildFullPracticeSetFrom = (bank: BaseItem[], excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) => [
   ...pick(bank, (item) => item.section === 'reading' && item.kind === 'complete-words', 2, excludedIds), ...pick(bank, title('Read in Daily Life'), 6, excludedIds), ...pick(bank, title('Read an Academic Passage'), 8, excludedIds),
   ...pick(bank, title('Listen and Choose a Response'), 8, excludedIds), ...pick(bank, (item) => item.section === 'listening' && item.title !== 'Listen and Choose a Response', 8, excludedIds),

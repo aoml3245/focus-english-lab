@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { AudioPrompt, ArrowIcon, Brand, HOME_NAVIGATION_EVENT, Recorder, Timer } from './components'
 import { CONTEXT_TOPIC_COUNT, SECTION_META } from './data'
-import { buildFullPracticeSetFrom, buildSectionPracticeFrom, countBySectionFrom, getActiveExamPackInfo, getActivePracticeItems, getAvailablePracticeItems } from './examPack'
+import { buildFullPracticeSetFrom, buildSectionPracticeFrom, buildTaskPracticeFrom, countBySectionFrom, getActiveExamPackInfo, getActivePracticeItems, getAvailablePracticeItems, getPracticeTaskTypesFrom } from './examPack'
 import { displayAnswer, getSessionStats, isCorrect } from './review'
 import { finishSession, loadActive, loadExcludedItemIds, loadHistory, saveActive, setSessionRandomEligibility } from './storage'
 import { getVoiceProfile, playTTS, prepareExamTTS, stopAllTTS, stopTTS } from './tts'
@@ -14,8 +14,8 @@ const ReadingAssistant = lazy(() => import('./ReadingAssistant'))
 const WritingCoach = lazy(() => import('./WritingCoach'))
 const History = lazy(() => import('./History'))
 const ExamData = lazy(() => import('./ExamData'))
-type Screen = 'home' | 'section-select' | 'intro' | 'test' | 'result' | 'vocabulary' | 'study-games' | 'voice-settings' | 'history' | 'exam-data'
-type AppNavigationState = { focusEnglishLab: true; screen: Screen; historySessionId?: string | null; resultId?: string | null }
+type Screen = 'home' | 'section-select' | 'task-select' | 'intro' | 'test' | 'result' | 'vocabulary' | 'study-games' | 'voice-settings' | 'history' | 'exam-data'
+type AppNavigationState = { focusEnglishLab: true; screen: Screen; historySessionId?: string | null; resultId?: string | null; practiceSection?: Section | null }
 const PRACTICE_ITEMS = getActivePracticeItems()
 const ACTIVE_PACK = getActiveExamPackInfo()
 const ITEM_BY_ID = new Map(getAvailablePracticeItems().map((item) => [item.id, item]))
@@ -23,21 +23,22 @@ const BANK_SIZE = PRACTICE_ITEMS.length.toLocaleString('en-US')
 const PREFLIGHT_AUDIO_TEXT = 'The audio system is ready. You may begin the practice test.'
 
 function savedSessionLabel(entry: SavedSession) {
+  if (entry.practiceLabel) return entry.practiceLabel
   if (entry.mode === 'study') return '즉시 피드백 랜덤 세트'
   if (entry.mode === 'mock') return '실전 모의시험'
   const sections = [...new Set((entry.itemIds || []).map((id) => ITEM_BY_ID.get(id)?.section).filter((section): section is Section => Boolean(section)))]
   return sections.length > 1 ? '전체 모의시험' : sections[0] ? `${SECTION_META[sections[0]].label} 집중 연습` : '연습 세트'
 }
 
-const newSession = (items: BaseItem[], mode: PracticeMode): SavedSession => {
+const newSession = (items: BaseItem[], mode: PracticeMode, practiceLabel?: string): SavedSession => {
   const now = new Date().toISOString()
-  return { id: crypto.randomUUID(), itemIds: items.map((item) => item.id), startedAt: now, updatedAt: now, itemIndex: 0, answers: {}, completed: false, mode, reviewedItemIds: [] }
+  return { id: crypto.randomUUID(), itemIds: items.map((item) => item.id), startedAt: now, updatedAt: now, itemIndex: 0, answers: {}, completed: false, mode, reviewedItemIds: [], practiceLabel }
 }
 
 function isAppNavigationState(value: unknown): value is AppNavigationState {
   if (!value || typeof value !== 'object') return false
   const state = value as Partial<AppNavigationState>
-  return state.focusEnglishLab === true && typeof state.screen === 'string' && ['home', 'section-select', 'intro', 'test', 'result', 'vocabulary', 'study-games', 'voice-settings', 'history', 'exam-data'].includes(state.screen)
+  return state.focusEnglishLab === true && typeof state.screen === 'string' && ['home', 'section-select', 'task-select', 'intro', 'test', 'result', 'vocabulary', 'study-games', 'voice-settings', 'history', 'exam-data'].includes(state.screen)
 }
 
 function itemsForSession(entry: SavedSession | null) {
@@ -64,12 +65,14 @@ function App() {
   const [result, setResult] = useState<SavedSession | null>(initialResult)
   const [poolMessage, setPoolMessage] = useState('')
   const [historySessionId, setHistorySessionId] = useState<string | null>(initialNavigation?.historySessionId || null)
+  const [practiceSection, setPracticeSection] = useState<Section | null>(initialNavigation?.practiceSection || null)
 
-  const navigate = useCallback((nextScreen: Screen, options: { replace?: boolean; historySessionId?: string | null; resultId?: string | null } = {}) => {
+  const navigate = useCallback((nextScreen: Screen, options: { replace?: boolean; historySessionId?: string | null; resultId?: string | null; practiceSection?: Section | null } = {}) => {
     if (nextScreen !== 'intro' && nextScreen !== 'test') stopAllTTS()
-    const nextState: AppNavigationState = { focusEnglishLab: true, screen: nextScreen, historySessionId: options.historySessionId || null, resultId: options.resultId || null }
+    const nextState: AppNavigationState = { focusEnglishLab: true, screen: nextScreen, historySessionId: options.historySessionId || null, resultId: options.resultId || null, practiceSection: options.practiceSection || null }
     window.history[options.replace ? 'replaceState' : 'pushState'](nextState, '', routeUrl(nextScreen))
     setHistorySessionId(nextState.historySessionId || null)
+    setPracticeSection(nextState.practiceSection || null)
     setScreen(nextScreen)
   }, [])
 
@@ -79,7 +82,7 @@ function App() {
   }, [navigate, screen])
 
   useEffect(() => {
-    if (!isAppNavigationState(window.history.state) || initialScreen !== window.history.state.screen) navigate(initialScreen, { replace: true, historySessionId, resultId: initialResult?.id })
+    if (!isAppNavigationState(window.history.state) || initialScreen !== window.history.state.screen) navigate(initialScreen, { replace: true, historySessionId, resultId: initialResult?.id, practiceSection })
     const onPopState = (event: PopStateEvent) => {
       if (!isAppNavigationState(event.state)) return
       const next = event.state
@@ -99,6 +102,7 @@ function App() {
         setItems(restored)
       }
       setHistorySessionId(next.historySessionId || null)
+      setPracticeSection(next.practiceSection || null)
       setScreen(next.screen)
     }
     window.addEventListener('popstate', onPopState)
@@ -125,10 +129,10 @@ function App() {
     }
   }, [])
 
-  const begin = (selected: BaseItem[], mode: PracticeMode) => {
+  const begin = (selected: BaseItem[], mode: PracticeMode, practiceLabel?: string) => {
     if (!selected.length) { setPoolMessage('랜덤 후보 문항이 없습니다. 학습 기록에서 이전 문항을 다시 랜덤 후보에 포함해 주세요.'); navigate('home'); return }
     setPoolMessage('')
-    const next = newSession(selected, mode); setItems(selected); setSession(next); saveActive(next); navigate('intro')
+    const next = newSession(selected, mode, practiceLabel); setItems(selected); setSession(next); saveActive(next); navigate('intro')
   }
   const resume = () => {
     if (!session) return
@@ -161,10 +165,11 @@ function App() {
   if (screen === 'voice-settings') return <Suspense fallback={<div className="route-loading">음성 설정을 불러오는 중입니다…</div>}><VoiceSettings onBack={goBack} /></Suspense>
   if (screen === 'exam-data') return <Suspense fallback={<div className="route-loading">시험 데이터를 불러오는 중입니다…</div>}><ExamData onBack={goBack} onActivate={() => { window.history.replaceState({ focusEnglishLab: true, screen: 'home' } satisfies AppNavigationState, '', routeUrl('home')); window.location.reload() }} /></Suspense>
   if (screen === 'history') return <Suspense fallback={<div className="route-loading">학습 기록을 불러오는 중입니다…</div>}><History initialSessionId={historySessionId} onBack={goBack} /></Suspense>
-  if (screen === 'section-select') return <SectionSelect onBack={goBack} onSelect={(section) => begin(buildSectionPracticeFrom(PRACTICE_ITEMS, section, loadExcludedItemIds()), 'section')} />
-  if (screen === 'intro') return <Intro items={items} mode={session?.mode || 'mock'} onBack={goBack} onStart={() => navigate('test')} />
+  if (screen === 'section-select') return <SectionSelect onBack={goBack} onSelect={(section) => navigate('task-select', { practiceSection: section })} />
+  if (screen === 'task-select') return practiceSection ? <TaskSelect section={practiceSection} onBack={goBack} onSelectAll={() => begin(buildSectionPracticeFrom(PRACTICE_ITEMS, practiceSection, loadExcludedItemIds()), 'section', `${SECTION_META[practiceSection].label} 전체 유형`)} onSelectTask={(taskTitle, taskLabel) => begin(buildTaskPracticeFrom(PRACTICE_ITEMS, practiceSection, taskTitle, loadExcludedItemIds()), 'section', `${SECTION_META[practiceSection].label} · ${taskLabel}`)} /> : <SectionSelect onBack={goBack} onSelect={(section) => navigate('task-select', { practiceSection: section })} />
+  if (screen === 'intro') return <Intro items={items} mode={session?.mode || 'mock'} practiceLabel={session?.practiceLabel} onBack={goBack} onStart={() => navigate('test')} />
   if (screen === 'test' && session) return <Test items={items} session={session} setSession={setSession} onAnswer={updateAnswer} onFinish={finish} />
-  if (screen === 'result' && result) return <Result items={items} session={result} onHome={() => navigate('home')} onRetry={() => begin(items, result.mode || 'mock')} onRandomEligibilityChange={updateResultEligibility} />
+  if (screen === 'result' && result) return <Result items={items} session={result} onHome={() => navigate('home')} onRetry={() => begin(items, result.mode || 'mock', result.practiceLabel)} onRandomEligibilityChange={updateResultEligibility} />
   return null
 }
 
@@ -183,10 +188,16 @@ function Home({ session, poolMessage, onStudy, onMock, onResume, onSections, onV
 
 function SectionSelect({ onBack, onSelect }: { onBack: () => void; onSelect: (section: Section) => void }) {
   const excludedIds = loadExcludedItemIds()
-  return <div className="simple-page"><header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header><main className="select-main"><h1>집중할 섹션을 고르세요.</h1><p>각 섹션의 랜덤 후보에서 유형과 난이도를 섞은 새 세트를 만듭니다. 학습 기록에서 제외한 문항은 후보 수에 포함되지 않습니다.</p><div className="section-list">{(Object.keys(SECTION_META) as Section[]).map((key, index) => <button key={key} disabled={countBySectionFrom(PRACTICE_ITEMS, key, excludedIds) === 0} onClick={() => onSelect(key)}><span className="step-number">{index + 1}</span><span><strong>{SECTION_META[key].label}</strong><small>{SECTION_META[key].tasks}</small></span><em>랜덤 후보 {countBySectionFrom(PRACTICE_ITEMS, key, excludedIds)}문항</em><ArrowIcon /></button>)}</div></main></div>
+  return <div className="simple-page"><header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header><main className="select-main"><h1>집중할 섹션을 고르세요.</h1><p>섹션을 고른 다음 전체 유형을 섞거나 하나의 세부 유형만 선택할 수 있습니다. 학습 기록에서 제외한 문항은 후보 수에 포함되지 않습니다.</p><div className="section-list">{(Object.keys(SECTION_META) as Section[]).map((key, index) => <button key={key} disabled={countBySectionFrom(PRACTICE_ITEMS, key, excludedIds) === 0} onClick={() => onSelect(key)}><span className="step-number">{index + 1}</span><span><strong>{SECTION_META[key].label}</strong><small>{SECTION_META[key].tasks}</small></span><em>랜덤 후보 {countBySectionFrom(PRACTICE_ITEMS, key, excludedIds)}문항</em><ArrowIcon /></button>)}</div></main></div>
 }
 
-function Intro({ items, mode, onBack, onStart }: { items: BaseItem[]; mode: PracticeMode; onBack: () => void; onStart: () => void }) {
+function TaskSelect({ section, onBack, onSelectAll, onSelectTask }: { section: Section; onBack: () => void; onSelectAll: () => void; onSelectTask: (title: string, label: string) => void }) {
+  const excludedIds = loadExcludedItemIds()
+  const tasks = getPracticeTaskTypesFrom(PRACTICE_ITEMS, section, excludedIds)
+  return <div className="simple-page"><header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 섹션으로</button></header><main className="select-main task-select-main"><span className="section-label">{SECTION_META[section].label}</span><h1>연습할 유형을 고르세요.</h1><p>한 유형만 반복하거나, 기존처럼 {SECTION_META[section].label}의 여러 유형을 섞어서 연습할 수 있습니다.</p><button className="task-all" onClick={onSelectAll}><span><strong>전체 유형 섞기</strong><small>{SECTION_META[section].tasks}</small></span><em>랜덤 후보 {countBySectionFrom(PRACTICE_ITEMS, section, excludedIds)}문항</em><ArrowIcon /></button><div className="task-list">{tasks.map((task, index) => <button key={task.title} onClick={() => onSelectTask(task.title, task.label)}><span className="step-number">{String(index + 1).padStart(2, '0')}</span><span><strong>{task.label}</strong><small>{task.description}</small></span><em>후보 {task.candidateCount} · 한 세트 {task.setSize}</em><ArrowIcon /></button>)}</div></main></div>
+}
+
+function Intro({ items, mode, practiceLabel, onBack, onStart }: { items: BaseItem[]; mode: PracticeMode; practiceLabel?: string; onBack: () => void; onStart: () => void }) {
   const first = items[0]
   const isFull = new Set(items.map((item) => item.section)).size > 1
   const profile = getVoiceProfile()
@@ -214,7 +225,7 @@ function Intro({ items, mode, onBack, onStart }: { items: BaseItem[]; mode: Prac
   }
   const preparing = preparation.phase === 'preparing'
   const ready = preparation.phase === 'ready' || preparation.phase === 'system' || preparation.phase === 'fallback'
-  const modeTitle = mode === 'study' ? '즉시 피드백 랜덤 세트' : mode === 'mock' ? '실전 모의시험' : `${SECTION_META[first.section].label} 집중 연습`
+  const modeTitle = practiceLabel || (mode === 'study' ? '즉시 피드백 랜덤 세트' : mode === 'mock' ? '실전 모의시험' : `${SECTION_META[first.section].label} 집중 연습`)
   return <div className="intro-screen"><header><Brand /><span>System check</span></header><main><div className="intro-copy"><span className="section-label">{isFull ? 'R · L · W · S' : SECTION_META[first.section].label}</span><h1>{modeTitle}</h1><p>{items.length}문항이 {BANK_SIZE}개 문제은행에서 새로 선택되었습니다. 모든 콘텐츠는 독창적인 연습 문항입니다.</p><ul>{mode === 'study' ? <><li>객관식 문항마다 답을 제출하면 즉시 정오답과 해설을 보여줍니다.</li><li>피드백을 확인하는 동안 타이머가 멈춥니다.</li></> : <li>정답과 해설은 전체 시험을 마친 뒤에 공개됩니다.</li>}<li>AI 음성은 로컬 서버에서 준비하며 시험 시작을 막지 않습니다.</li><li>Listening에서는 이전 문항으로 돌아갈 수 없습니다.</li><li>Speaking 녹음을 위해 마이크 권한이 필요합니다.</li></ul></div><div className="system-panel"><h2>시작 전 확인</h2><div><span>학습 방식</span><strong>{mode === 'study' ? '문항별 즉시 채점' : '종료 후 채점'}</strong></div><div><span>선택 문항</span><strong>{items.length}</strong></div><div><span>오디오 출력</span><strong>{profile.shortLabel}</strong></div><div><span>마이크</span><strong>Speaking에서 요청</strong></div><div className={`preflight-status preflight-status--${preparation.phase}`} role="status" aria-live="polite"><span className={preparing ? 'audio-pulse audio-pulse--active' : 'audio-pulse'} /><span><strong>{preparing ? 'AI 음성 백그라운드 준비 중' : preparation.phase === 'ready' ? 'AI 음성 준비 완료' : preparation.phase === 'system' ? '기기 음성 준비 완료' : preparation.phase === 'fallback' ? '대체 음성 준비 완료' : '음성 준비 실패'}</strong><small>{preparing ? `${preparation.message} 지금 바로 시험을 시작해도 됩니다.` : preparation.message}</small></span></div>{ready && <button className="button button--secondary preflight-test" disabled={preview === 'playing'} onClick={playCheck}>{preview === 'playing' ? '테스트 음성 재생 중…' : preview === 'done' ? '테스트 다시 듣기' : preview === 'error' ? '음성 테스트 다시 시도' : '준비된 음성 테스트'}</button>}{preparation.phase === 'error' && <button className="button button--secondary preflight-test" onClick={() => setAttempt((value) => value + 1)}>음성 준비 다시 시도</button>}<button className="button button--primary button--large" disabled={preview === 'playing'} onClick={onStart}>시험 바로 시작 <ArrowIcon /></button><button className="text-button" onClick={onBack}>나중에 하기</button></div></main></div>
 }
 
