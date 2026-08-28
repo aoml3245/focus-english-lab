@@ -6,19 +6,21 @@ The generated vocabulary dataset in `public/vocabulary.json` incorporates lexica
 
 - Source: https://github.com/jhseo1211/open-english-korean-dict
 - License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
-- Used fields: Korean headword meanings, IPA, CEFR metadata, and part-of-speech metadata used during generation.
-- Changes: Entries are selected from the app's original question corpus, lemmatized, matched to contextual senses, supplemented with examples from that corpus, and combined with the generated translations and WordNet data.
+- Snapshot: commit `92cbfe63deee1ccead2c42677027d8b4a305b2c7`
+- Used fields: Korean headword meanings, English glosses, IPA, CEFR metadata, and frequency ranks.
+- Changes: Valid problem-corpus entries are retained; additional B1–C2 entries are selected by frequency, filtered, matched to WordNet senses, and combined with generated definition-oriented study sentences.
 
 The derived lexical dataset is distributed under CC BY-SA 4.0. This notice does not change the license or ownership of the application's independently written question corpus or source code.
 
-## Open English WordNet / Princeton WordNet
+## Open English WordNet 2025 / Princeton WordNet
 
 - Source: https://en-word.net/
 - Downloads and license information: https://en-word.net/downloads
-- Princeton WordNet license: https://wordnet.princeton.edu/license-and-commercial-use
-- Used fields: English sense definitions and same-sense synonym candidates.
+- License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+- Earlier retained fields may also use Princeton WordNet under its license: https://wordnet.princeton.edu/license-and-commercial-use
+- Used fields: English sense definitions, part-of-speech labels, lexical domains, and same-sense synonym candidates.
 
-The public repository does not include downloaded dictionary databases, NLTK corpora, Academic Word List source files, research PDFs, model weights, or the local generation environment. Academic-core labels in the checked-in dataset are calculated only from CEFR level and frequency inside this project's original question corpus.
+The public repository does not include downloaded dictionary databases, research PDFs, model weights, or the local generation environment. The reproducible selection and quality gates are implemented in `scripts/build_vocabulary.py`. Academic-core labels combine corpus evidence with CEFR level and dictionary frequency; they are project study aids, not an official TOEFL vocabulary classification.
 
 ## Kokoro 82M text-to-speech
 

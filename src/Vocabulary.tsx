@@ -17,7 +17,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
   const [level, setLevel] = useState('All')
   const [topic, setTopic] = useState('All')
   const [savedOnly, setSavedOnly] = useState(false)
-  const [academicOnly, setAcademicOnly] = useState(true)
+  const [academicOnly, setAcademicOnly] = useState(false)
   const [sort, setSort] = useState<'academic' | 'frequency' | 'alphabetical'>('academic')
   const [page, setPage] = useState(0)
   const [favorites, setFavorites] = useState(loadFavorites)
@@ -50,12 +50,17 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
     )
     return values.sort((a, b) => {
       if (sort === 'alphabetical') return a.word.localeCompare(b.word)
-      if (sort === 'frequency') return b.frequency - a.frequency || a.word.localeCompare(b.word)
+      if (sort === 'frequency') {
+        const corpusDifference = Number(b.frequency > 0) - Number(a.frequency > 0)
+        if (corpusDifference) return corpusDifference
+        if (a.frequency !== b.frequency) return b.frequency - a.frequency
+        return (a.frequencyRank ?? Number.MAX_SAFE_INTEGER) - (b.frequencyRank ?? Number.MAX_SAFE_INTEGER) || a.word.localeCompare(b.word)
+      }
       const academicDifference = Number(Boolean(b.academicCore)) - Number(Boolean(a.academicCore))
       if (academicDifference) return academicDifference
       const levelDifference = (LEVEL_WEIGHT[b.cefr] || 0) - (LEVEL_WEIGHT[a.cefr] || 0)
       if (levelDifference) return levelDifference
-      return b.frequency - a.frequency || a.word.localeCompare(b.word)
+      return b.frequency - a.frequency || (a.frequencyRank ?? Number.MAX_SAFE_INTEGER) - (b.frequencyRank ?? Number.MAX_SAFE_INTEGER) || a.word.localeCompare(b.word)
     })
   }, [academicOnly, deferredQuery, favorites, level, savedOnly, sort, topic, vocabulary])
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
@@ -95,7 +100,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
   return <div className="vocab-page">
     <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header>
     <main>
-      <div className="vocab-hero"><div><h1>문장으로 익히는 단어장</h1><p>1,000문항의 원문에서 추출한 어휘를 문항 빈도와 B2–C2 난이도에 따라 정리했습니다. 단어와 예문은 음성 설정에서 고른 목소리로 들을 수 있습니다.</p></div><dl><div><dt>학술 핵심</dt><dd>{vocabulary.length ? academicCount.toLocaleString('en-US') : '—'}</dd></div><div><dt>저장한 단어</dt><dd>{favorites.size.toLocaleString('en-US')}</dd></div></dl></div>
+      <div className="vocab-hero"><div><h1>문장으로 익히는 단어장</h1><p>문제은행의 문맥 어휘와 공개 사전에서 품질 조건을 통과한 약 3만 개를 한곳에 정리했습니다. 단어와 예문은 음성 설정에서 고른 목소리로 들을 수 있습니다.</p></div><dl><div><dt>전체 어휘</dt><dd>{vocabulary.length ? vocabulary.length.toLocaleString('en-US') : '—'}</dd></div><div><dt>학술 핵심</dt><dd>{vocabulary.length ? academicCount.toLocaleString('en-US') : '—'}</dd></div><div><dt>저장한 단어</dt><dd>{favorites.size.toLocaleString('en-US')}</dd></div></dl></div>
       <section className="vocab-controls" aria-label="단어장 검색과 필터">
         <label className="vocab-search"><span>단어 검색</span><input type="search" value={query} onChange={(event) => changeFilter(() => setQuery(event.target.value))} placeholder="영어 단어, 한국어 뜻, 동의어 검색" /></label>
         <label><span>난이도</span><select value={level} onChange={(event) => changeFilter(() => setLevel(event.target.value))}>{LEVELS.map((value) => <option key={value} value={value}>{value === 'All' ? '전체' : value}</option>)}</select></label>
@@ -105,9 +110,9 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
         <button className={savedOnly ? 'filter-toggle filter-toggle--active' : 'filter-toggle'} onClick={() => changeFilter(() => setSavedOnly((value) => !value))}>{savedOnly ? '내가 만든 단어장 보는 중' : '내가 만든 단어장'}</button>
       </section>
       <div className="vocab-result-head"><p><strong>{filtered.length.toLocaleString('en-US')}</strong>개 단어</p><span>{safePage + 1} / {pages} 페이지</span></div>
-      {loadError ? <div className="vocab-empty"><strong>{loadError}</strong><span>페이지를 새로고침해 다시 시도해 주세요.</span></div> : !vocabulary.length ? <div className="vocab-empty"><strong>단어장을 불러오는 중입니다.</strong><span>1,000문항의 어휘를 정리하고 있습니다.</span></div> : visible.length ? <section className="vocab-list" aria-label="단어 목록">{visible.map((entry) => <VocabularyCard key={entry.word} entry={entry} saved={favorites.has(entry.word)} audio={audio} onPlay={playVocabularyAudio} onToggle={() => toggleFavorite(entry.word)} />)}</section> : <div className="vocab-empty"><strong>조건에 맞는 단어가 없습니다.</strong><span>검색어나 필터를 바꿔 보세요.</span></div>}
+      {loadError ? <div className="vocab-empty"><strong>{loadError}</strong><span>페이지를 새로고침해 다시 시도해 주세요.</span></div> : !vocabulary.length ? <div className="vocab-empty"><strong>단어장을 불러오는 중입니다.</strong><span>약 3만 개 어휘를 정리하고 있습니다.</span></div> : visible.length ? <section className="vocab-list" aria-label="단어 목록">{visible.map((entry) => <VocabularyCard key={entry.word} entry={entry} saved={favorites.has(entry.word)} audio={audio} onPlay={playVocabularyAudio} onToggle={() => toggleFavorite(entry.word)} />)}</section> : <div className="vocab-empty"><strong>조건에 맞는 단어가 없습니다.</strong><span>검색어나 필터를 바꿔 보세요.</span></div>}
       {pages > 1 && <nav className="vocab-pagination" aria-label="단어장 페이지"><button disabled={safePage === 0} onClick={() => { stopVocabularyAudio(); setPage(Math.max(0, safePage - 1)) }}><ArrowIcon direction="left" /> 이전</button><span>{safePage + 1} / {pages}</span><button disabled={safePage === pages - 1} onClick={() => { stopVocabularyAudio(); setPage(Math.min(pages - 1, safePage + 1)) }}>다음 <ArrowIcon /></button></nav>}
-      <p className="vocab-attribution">학술 핵심 기준: 앱 문항 빈도와 B2–C2 난이도<br />어휘 정보: <a href="https://github.com/jhseo1211/open-english-korean-dict" target="_blank" rel="noreferrer">Open English–Korean Dictionary</a> · <a href="https://wordnet.princeton.edu/" target="_blank" rel="noreferrer">Princeton WordNet</a></p>
+      <p className="vocab-attribution">학술 핵심 기준: 앱 문항 빈도 또는 B2–C2 난이도와 공개 사전 빈도<br />어휘 정보: <a href="https://github.com/jhseo1211/open-english-korean-dict" target="_blank" rel="noreferrer">Open English–Korean Dictionary</a> · <a href="https://en-word.net/downloads" target="_blank" rel="noreferrer">Open English WordNet 2025</a></p>
     </main>
   </div>
 }
@@ -131,6 +136,6 @@ function VocabularyCard({ entry, saved, audio, onPlay, onToggle }: { entry: Lear
     <div className="vocab-meanings"><strong>{entry.meaningKo}</strong><p>{entry.meaningEn}</p></div>
     <div className="vocab-synonyms"><span>동의어</span>{entry.synonyms.length ? <div>{entry.synonyms.map((word) => <em key={word}>{word}</em>)}</div> : <p>문맥상 가까운 동의어 없음</p>}</div>
     <blockquote><VocabularyAudioButton label="예문 듣기" accessibleLabel={entry.word} state={audio?.key === exampleKey ? audio : null} onClick={() => onPlay(exampleKey, entry.example)} /><p>{entry.example}</p><footer>{entry.translation || '해석 생성 중'}</footer></blockquote>
-    <div className="vocab-meta"><span>{entry.source === 'local-llm' ? '로컬 LLM 문맥 정리' : `문항에서 ${entry.frequency}회`}</span><span>{entry.topics.join(' · ')}</span></div>
+    <div className="vocab-meta"><span>{entry.source === 'local-llm' ? '로컬 LLM 문맥 정리' : entry.source === 'dictionary' && entry.frequencyRank ? `영어 사용 빈도 ${entry.frequencyRank.toLocaleString('en-US')}위` : `문항에서 ${entry.frequency}회`}</span><span>{entry.topics.join(' · ')}</span></div>
   </article>
 }

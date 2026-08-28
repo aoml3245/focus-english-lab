@@ -4,17 +4,21 @@
 
 ## Open English–Korean Dictionary-derived fields
 
-Korean meanings, IPA, CEFR and part-of-speech metadata were derived from [Open English–Korean Dictionary](https://github.com/jhseo1211/open-english-korean-dict), licensed under [Creative Commons Attribution-ShareAlike 4.0 International](https://creativecommons.org/licenses/by-sa/4.0/).
+Korean meanings, English glosses, IPA, CEFR and frequency ranks were derived from [Open English–Korean Dictionary](https://github.com/jhseo1211/open-english-korean-dict) at commit `92cbfe63deee1ccead2c42677027d8b4a305b2c7`, licensed under [Creative Commons Attribution-ShareAlike 4.0 International](https://creativecommons.org/licenses/by-sa/4.0/).
 
-The derived fields and the combined vocabulary dataset are redistributed under CC BY-SA 4.0. Changes include selecting words from this project's original question corpus, lemmatizing and matching contextual senses, combining corpus examples and translations, adding frequency/topic fields, and calculating `academicCore` from CEFR level and corpus frequency.
+The derived fields and the combined vocabulary dataset are redistributed under CC BY-SA 4.0. Changes include retaining valid entries from this project's original question corpus, selecting additional single-word B1–C2 entries by frequency, filtering fragments and unsuitable terms, disambiguating WordNet senses against the dictionary's English gloss, combining corpus examples and translations, generating definition-oriented learner sentences for additions, adding frequency/topic fields, and calculating `academicCore`.
 
 ## WordNet-derived fields
 
-English definitions and synonym candidates include data derived from Princeton WordNet / Open English WordNet.
+English definitions, part-of-speech labels, lexical domains and synonym candidates for added entries include data derived from [Open English WordNet 2025](https://en-word.net/downloads), licensed under [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/).
 
-WordNet 3.0 Copyright 2006 by Princeton University. All rights reserved. Permission to use, copy, modify and distribute the database for any purpose without fee or royalty is granted subject to retaining the WordNet copyright notice, license statements and disclaimer. Princeton provides the database as-is without warranties and does not grant use of its name for advertising.
+Some fields retained from the earlier problem-derived vocabulary build may also trace to Princeton WordNet 3.0. WordNet 3.0 Copyright 2006 by Princeton University. All rights reserved. Permission to use, copy, modify and distribute the database for any purpose without fee or royalty is granted subject to retaining the WordNet copyright notice, license statements and disclaimer. Princeton provides the database as-is without warranties and does not grant use of its name for advertising.
 
 Full terms: [`licenses/WORDNET-LICENSE.txt`](./licenses/WORDNET-LICENSE.txt) and [Princeton WordNet license and commercial use](https://wordnet.princeton.edu/license-and-commercial-use).
+
+## Reproducible build
+
+The source databases are not checked into this repository. After downloading the two sources above, the checked-in artifact can be rebuilt with `scripts/build_vocabulary.py`. The current artifact contains the maximum 29,976 entries that pass the documented inputs and filters; the script fails if its requested target cannot be met or required learner fields are missing. Its generated definition sentences are functional learning aids, not quotations from either source or from an official TOEFL exam.
 
 ## Original corpus fields
 

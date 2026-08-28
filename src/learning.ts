@@ -9,9 +9,10 @@ export type LearningEntry = {
   example: string
   translation: string
   frequency: number
+  frequencyRank?: number
   topics: string[]
   academicCore?: boolean
-  source?: 'dictionary' | 'local-llm'
+  source?: 'corpus' | 'dictionary' | 'local-llm'
   context?: string
   savedAt?: string
 }
