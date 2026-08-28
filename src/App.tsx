@@ -4,7 +4,7 @@ import { CONTEXT_TOPIC_COUNT, SECTION_META } from './data'
 import { buildFullPracticeSetFrom, buildSectionPracticeFrom, countBySectionFrom, getActiveExamPackInfo, getActivePracticeItems, getAvailablePracticeItems } from './examPack'
 import { displayAnswer, getSessionStats, isCorrect } from './review'
 import { finishSession, loadActive, loadExcludedItemIds, loadHistory, saveActive, setSessionRandomEligibility } from './storage'
-import { getVoiceProfile, playTTS, prepareExamTTS, stopTTS } from './tts'
+import { getVoiceProfile, playTTS, prepareExamTTS, stopAllTTS, stopTTS } from './tts'
 import type { Answer, BaseItem, PracticeMode, SavedSession, Section } from './types'
 
 const Vocabulary = lazy(() => import('./Vocabulary'))
@@ -65,6 +65,7 @@ function App() {
   const [historySessionId, setHistorySessionId] = useState<string | null>(initialNavigation?.historySessionId || null)
 
   const navigate = useCallback((nextScreen: Screen, options: { replace?: boolean; historySessionId?: string | null; resultId?: string | null } = {}) => {
+    if (nextScreen !== 'intro' && nextScreen !== 'test') stopAllTTS()
     const nextState: AppNavigationState = { focusEnglishLab: true, screen: nextScreen, historySessionId: options.historySessionId || null, resultId: options.resultId || null }
     window.history[options.replace ? 'replaceState' : 'pushState'](nextState, '', routeUrl(nextScreen))
     setHistorySessionId(nextState.historySessionId || null)
@@ -81,6 +82,7 @@ function App() {
     const onPopState = (event: PopStateEvent) => {
       if (!isAppNavigationState(event.state)) return
       const next = event.state
+      if (next.screen !== 'intro' && next.screen !== 'test') stopAllTTS()
       if (next.screen === 'intro' || next.screen === 'test') {
         const active = loadActive()
         const restored = itemsForSession(active)
@@ -107,6 +109,20 @@ function App() {
     window.addEventListener(HOME_NAVIGATION_EVENT, onHome)
     return () => window.removeEventListener(HOME_NAVIGATION_EVENT, onHome)
   }, [navigate, screen])
+
+  useEffect(() => {
+    const stopAllAudio = () => stopAllTTS()
+    const stopWhenHidden = () => { if (document.visibilityState === 'hidden') stopAllTTS() }
+    window.addEventListener('pagehide', stopAllAudio)
+    window.addEventListener('beforeunload', stopAllAudio)
+    document.addEventListener('visibilitychange', stopWhenHidden)
+    return () => {
+      window.removeEventListener('pagehide', stopAllAudio)
+      window.removeEventListener('beforeunload', stopAllAudio)
+      document.removeEventListener('visibilitychange', stopWhenHidden)
+      stopAllTTS()
+    }
+  }, [])
 
   const begin = (selected: BaseItem[], mode: PracticeMode) => {
     if (!selected.length) { setPoolMessage('랜덤 후보 문항이 없습니다. 학습 기록에서 이전 문항을 다시 랜덤 후보에 포함해 주세요.'); navigate('home'); return }
