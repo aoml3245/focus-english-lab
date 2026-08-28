@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getExamTTSPrecacheState, loadVoiceProfileId, playTTS, stopTTS, subscribeExamTTSPrecache, type ExamTTSPrecacheState, type SpeechMode } from './tts'
+import { loadVoiceProfileId, playTTS, prepareSpeech, stopTTS, type SpeechMode } from './tts'
 
 export const HOME_NAVIGATION_EVENT = 'focus-english-lab:navigate-home'
 
@@ -28,46 +28,57 @@ export function Timer({ seconds, onExpire, hidden = false, paused = false }: { s
   return <span className={left <= 15 ? 'timer timer--low' : 'timer'} aria-label={hidden ? '시간 숨김' : `남은 시간 ${mm}분 ${ss}초`}>{hidden ? '--:--' : `${mm}:${ss}`}</span>
 }
 
-export function AudioPrompt({ text, speechMode, autoPlay = false, onPlaybackChange }: { text: string; speechMode: SpeechMode; autoPlay?: boolean; onPlaybackChange?: (active: boolean) => void }) {
-  const [state, setState] = useState<'idle' | 'loading' | 'playing' | 'played' | 'error'>('idle')
-  const [status, setStatus] = useState('')
-  const [precache, setPrecache] = useState<ExamTTSPrecacheState>(() => getExamTTSPrecacheState())
+export function AudioPrompt({ text, speechMode, onPlaybackChange }: { text: string; speechMode: SpeechMode; onPlaybackChange?: (active: boolean) => void }) {
+  const [state, setState] = useState<'preparing' | 'ready' | 'playing' | 'played' | 'error'>('preparing')
+  const [status, setStatus] = useState('음성을 변환하고 있습니다.')
+  const [attempt, setAttempt] = useState(0)
   const started = useRef(false)
   const play = useCallback(async () => {
-    if (started.current) return
+    if (started.current || state !== 'ready') return
     started.current = true
     onPlaybackChange?.(true)
-    setState('loading')
+    setState('playing')
+    setStatus('재생 중…')
     try {
       const result = await playTTS(text, loadVoiceProfileId(), (message) => {
         setStatus(message)
-        setState(message === '재생 중…' ? 'playing' : 'loading')
       }, { maxWaitMs: 60_000, speechMode })
       if (result === 'cancelled') return
       setState('played')
       setStatus(result === 'fallback' ? '시스템 음성으로 재생했습니다.' : '한 번 재생했습니다.')
     } catch (error) {
-      started.current = false
       setState('error')
       setStatus(error instanceof Error ? error.message : '오디오를 재생하지 못했습니다.')
     } finally { onPlaybackChange?.(false) }
-  }, [onPlaybackChange, speechMode, text])
+  }, [onPlaybackChange, speechMode, state, text])
   useEffect(() => {
     stopTTS()
+    const controller = new AbortController()
     started.current = false
-    setState('idle')
-    setStatus('')
-    onPlaybackChange?.(false)
-  }, [onPlaybackChange, text])
-  useEffect(() => {
-    if (!autoPlay) return undefined
-    const id = window.setTimeout(play, 500)
-    return () => window.clearTimeout(id)
-  }, [autoPlay, play])
-  useEffect(() => () => { stopTTS(); onPlaybackChange?.(false) }, [onPlaybackChange])
-  useEffect(() => subscribeExamTTSPrecache(setPrecache), [])
-  const label = state === 'played' ? 'Audio played' : state === 'error' ? 'Try audio again' : state === 'loading' ? 'Preparing natural voice…' : state === 'playing' ? 'Playing audio…' : 'Play audio once'
-  return <div className="audio-prompt"><button className="audio-button" onClick={play} disabled={state === 'loading' || state === 'playing' || state === 'played'}><span className={state === 'loading' || state === 'playing' ? 'audio-dot audio-dot--active' : 'audio-dot'} />{label}</button>{status && <small aria-live="polite">{status}</small>}{precache.status === 'preparing' && <div className="audio-precache" role="status" aria-live="polite"><span>백그라운드 음성 준비 {precache.completed}/{precache.total} · {precache.percent}%</span><i aria-hidden="true"><b style={{ width: `${precache.percent}%` }} /></i></div>}</div>
+    setState('preparing')
+    setStatus('음성을 변환하고 있습니다.')
+    onPlaybackChange?.(true)
+    void prepareSpeech(text, loadVoiceProfileId(), speechMode, (message) => setStatus(message), controller.signal)
+      .then(() => {
+        if (controller.signal.aborted) return
+        setState('ready')
+        setStatus('음성 준비가 끝났습니다. 재생 버튼을 눌러 주세요.')
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setState('error')
+        setStatus(error instanceof Error ? error.message : '음성을 준비하지 못했습니다.')
+      })
+      .finally(() => { if (!controller.signal.aborted) onPlaybackChange?.(false) })
+    return () => {
+      controller.abort()
+      stopTTS()
+      onPlaybackChange?.(false)
+    }
+  }, [attempt, onPlaybackChange, speechMode, text])
+  const label = state === 'played' ? 'Audio played' : state === 'error' ? '음성 준비 다시 시도' : state === 'preparing' ? 'Preparing natural voice…' : state === 'playing' ? 'Playing audio…' : 'Play audio once'
+  const action = state === 'error' ? () => setAttempt((value) => value + 1) : play
+  return <div className="audio-prompt"><button className="audio-button" onClick={action} disabled={state === 'preparing' || state === 'playing' || state === 'played'}><span className={state === 'preparing' || state === 'playing' ? 'audio-dot audio-dot--active' : 'audio-dot'} />{label}</button>{status && <small aria-live="polite">{status}</small>}</div>
 }
 
 export function Recorder({ onRecorded }: { onRecorded: (duration: number) => void }) {

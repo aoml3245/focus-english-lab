@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowIcon, Brand } from './components'
-import { browserSupportsWebGPU, getActiveBrowserTTSBackend, getBrowserKokoroCacheState, getBrowserTTSFallbackReason, getBrowserTTSRuntimeInfo, getVoiceProfile, hasLocalTtsServer, isIOSBrowser, loadTTSBackendPreference, loadVoiceProfileId, playTTS, resolveTTSBackend, saveTTSBackendPreference, saveVoiceProfileId, stopTTS, VOICE_PROFILES, type TTSBackendPreference, type TTSProgressDetail, type VoiceProfileId } from './tts'
+import { browserSupportsWebGPU, getActiveBrowserTTSBackend, getBrowserKokoroCacheState, getBrowserTTSFallbackReason, getBrowserTTSRuntimeInfo, getVoiceProfile, hasLocalTtsServer, isIOSBrowser, loadTTSBackendPreference, loadVoiceProfileId, playTTS, prepareSpeech, resolveTTSBackend, saveTTSBackendPreference, saveVoiceProfileId, stopTTS, VOICE_PROFILES, type TTSBackendPreference, type TTSProgressDetail, type VoiceProfileId } from './tts'
 import { APP_VERSION } from './version'
 import { clearTTSDiagnostics, formatTTSDiagnostics, getTTSDiagnostics, subscribeTTSDiagnostics, type TTSDiagnosticEvent } from './ttsDiagnostics'
 
@@ -9,7 +9,8 @@ const PREVIEW_TEXT = 'Student: Could you help me understand the new research sch
 export default function VoiceSettings({ onBack }: { onBack: () => void }) {
   const localTts = hasLocalTtsServer()
   const [selected, setSelected] = useState<VoiceProfileId>(loadVoiceProfileId)
-  const [previewing, setPreviewing] = useState<VoiceProfileId | null>(null)
+  const [previewState, setPreviewState] = useState<{ id: VoiceProfileId; phase: 'preparing' | 'ready' | 'playing' | 'done' | 'error' } | null>(null)
+  const previewPreparation = useRef<AbortController | null>(null)
   const [status, setStatus] = useState('음성을 선택한 뒤 미리 듣기로 비교해 보세요.')
   const [cacheState, setCacheState] = useState<'checking' | 'available' | 'missing' | 'unsupported'>(localTts ? 'unsupported' : 'checking')
   const [modelProgress, setModelProgress] = useState<TTSProgressDetail | null>(null)
@@ -18,7 +19,7 @@ export default function VoiceSettings({ onBack }: { onBack: () => void }) {
   const [diagnostics, setDiagnostics] = useState<TTSDiagnosticEvent[]>(getTTSDiagnostics)
   const [diagnosticStatus, setDiagnosticStatus] = useState('')
   const runtimeInfo = getBrowserTTSRuntimeInfo()
-  useEffect(() => () => stopTTS(), [])
+  useEffect(() => () => { previewPreparation.current?.abort(); stopTTS() }, [])
   useEffect(() => subscribeTTSDiagnostics(setDiagnostics), [])
   useEffect(() => {
     if (localTts) return
@@ -32,13 +33,37 @@ export default function VoiceSettings({ onBack }: { onBack: () => void }) {
     saveVoiceProfileId(id)
     setStatus(`${getVoiceProfile(id).name} 음성을 기본값으로 저장했습니다.`)
   }
-  const preview = async (id: VoiceProfileId) => {
-    const startedAt = performance.now()
-    let firstAudioReported = false
-    setPreviewing(id)
+  const preparePreview = async (id: VoiceProfileId) => {
+    previewPreparation.current?.abort()
+    const controller = new AbortController()
+    previewPreparation.current = controller
+    setPreviewState({ id, phase: 'preparing' })
     setFirstAudioMs(null)
     if (!localTts && id !== 'system') setModelProgress({ phase: 'checking', percent: 0 })
     else setModelProgress(null)
+    try {
+      await prepareSpeech(PREVIEW_TEXT, id, 'dialogue', (message, detail) => {
+        setStatus(message)
+        if (detail && !localTts) {
+          setModelProgress(detail)
+          if (detail.cached) setCacheState('available')
+        }
+      }, controller.signal)
+      if (controller.signal.aborted) return
+      setPreviewState({ id, phase: 'ready' })
+      setStatus(`${getVoiceProfile(id).name} 미리 듣기가 준비됐습니다. 재생 버튼을 눌러 주세요.`)
+      if (!localTts && id !== 'system') setModelProgress({ phase: 'ready', percent: 100, cached: true })
+    } catch (error) {
+      if (controller.signal.aborted) return
+      setPreviewState({ id, phase: 'error' })
+      setStatus(error instanceof Error ? error.message : '미리 듣기 음성을 준비하지 못했습니다.')
+    }
+  }
+  const playPreview = async (id: VoiceProfileId) => {
+    const startedAt = performance.now()
+    let firstAudioReported = false
+    setPreviewState({ id, phase: 'playing' })
+    setFirstAudioMs(null)
     try {
       const result = await playTTS(PREVIEW_TEXT, id, (message, detail) => {
         setStatus(message)
@@ -52,23 +77,34 @@ export default function VoiceSettings({ onBack }: { onBack: () => void }) {
         }
       })
       if (result === 'completed') {
+        setPreviewState({ id, phase: 'done' })
         setStatus(`${getVoiceProfile(id).name} 미리 듣기가 끝났습니다.`)
         if (!localTts && id !== 'system') setModelProgress({ phase: 'complete', percent: 100, cached: true })
       }
       if (result === 'fallback') {
+        setPreviewState({ id, phase: 'done' })
         setStatus('AI 모델을 불러오지 못해 기기 기본 음성으로 재생했습니다.')
         setModelProgress(null)
       }
     } catch (error) {
+      setPreviewState({ id, phase: 'error' })
       setStatus(error instanceof Error ? error.message : '음성을 재생하지 못했습니다.')
-    } finally { setPreviewing(null) }
+    }
+  }
+
+  const preview = (id: VoiceProfileId) => {
+    const prepared = previewState?.id === id && (previewState.phase === 'ready' || previewState.phase === 'done')
+    if (prepared) void playPreview(id)
+    else void preparePreview(id)
   }
 
   const chooseBackend = (preference: TTSBackendPreference) => {
+    previewPreparation.current?.abort()
     setBackendPreference(preference)
     saveTTSBackendPreference(preference)
     setModelProgress(null)
     setFirstAudioMs(null)
+    setPreviewState(null)
     setStatus(`${preference === 'auto' ? '자동' : preference === 'webgpu' ? 'WebGPU(Metal)' : 'WASM 호환'} 모드로 저장했습니다. 다음 미리 듣기부터 적용됩니다.`)
   }
 
@@ -136,10 +172,10 @@ export default function VoiceSettings({ onBack }: { onBack: () => void }) {
         {VOICE_PROFILES.map((profile) => <article className={selected === profile.id ? 'voice-row voice-row--selected' : 'voice-row'} key={profile.id}>
           <div className="voice-radio" aria-hidden="true"><span /></div>
           <div className="voice-copy"><div><h2>{profile.name}</h2>{profile.recommended && <em>기본 권장</em>}</div><p>{profile.description}</p><small>{profile.accent}</small></div>
-          <div className="voice-actions"><button className="button button--secondary" disabled={previewing !== null} onClick={() => preview(profile.id)}>{previewing === profile.id ? '준비 중…' : '미리 듣기'}</button><button className="button button--primary" disabled={selected === profile.id} onClick={() => choose(profile.id)}>{selected === profile.id ? '선택됨' : '이 음성 선택'}</button></div>
+          <div className="voice-actions"><button className="button button--secondary" disabled={previewState?.phase === 'preparing' || previewState?.phase === 'playing'} onClick={() => preview(profile.id)}>{previewState?.id === profile.id && previewState.phase === 'preparing' ? '준비 중…' : previewState?.id === profile.id && previewState.phase === 'playing' ? '재생 중…' : previewState?.id === profile.id && previewState.phase === 'ready' ? '재생' : previewState?.id === profile.id && previewState.phase === 'done' ? '다시 재생' : previewState?.id === profile.id && previewState.phase === 'error' ? '준비 다시 시도' : '미리 듣기 준비'}</button><button className="button button--primary" disabled={selected === profile.id} onClick={() => choose(profile.id)}>{selected === profile.id ? '선택됨' : '이 음성 선택'}</button></div>
         </article>)}
       </section>
-      <div className="voice-status" aria-live="polite"><span className={previewing ? 'audio-pulse audio-pulse--active' : 'audio-pulse'} />{status}{firstAudioMs !== null && <strong>첫 소리 {firstAudioMs.toLocaleString()}ms</strong>}</div>
+      <div className="voice-status" aria-live="polite"><span className={previewState?.phase === 'preparing' || previewState?.phase === 'playing' ? 'audio-pulse audio-pulse--active' : 'audio-pulse'} />{status}{firstAudioMs !== null && <strong>첫 소리 {firstAudioMs.toLocaleString()}ms</strong>}</div>
       <p className="voice-attribution">오픈소스 모델: <a href="https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX" target="_blank" rel="noreferrer">Kokoro-82M ONNX</a> · Apache 2.0</p>
     </main>
   </div>

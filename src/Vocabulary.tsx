@@ -1,10 +1,10 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowIcon, Brand } from './components'
 import { loadFavorites, loadPersonalWords, removePersonalWord, requestVocabulary, saveFavorites, type LearningEntry } from './learning'
-import { loadVoiceProfileId, playTTS, stopTTS } from './tts'
+import { loadVoiceProfileId, playTTS, prepareSpeech, stopTTS } from './tts'
 
 type IndexedEntry = LearningEntry & { searchText: string }
-type VocabularyAudioState = { key: string; phase: 'loading' | 'playing' | 'done' | 'error'; status: string }
+type VocabularyAudioState = { key: string; phase: 'preparing' | 'ready' | 'playing' | 'done' | 'error'; status: string }
 const PAGE_SIZE = 48
 const LEVELS = ['All', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 const LEVEL_WEIGHT: Record<string, number> = { A1: 1, A2: 2, B1: 3, B2: 4, C1: 5, C2: 6 }
@@ -23,6 +23,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
   const [favorites, setFavorites] = useState(loadFavorites)
   const [audio, setAudio] = useState<VocabularyAudioState | null>(null)
   const audioRequest = useRef(0)
+  const audioPreparation = useRef<AbortController | null>(null)
   useEffect(() => {
     let active = true
     requestVocabulary().then((entries) => {
@@ -36,7 +37,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
     }).catch((error: unknown) => { if (active) setLoadError(error instanceof Error ? error.message : '단어장 데이터를 불러오지 못했습니다.') })
     return () => { active = false }
   }, [])
-  useEffect(() => () => { audioRequest.current += 1; stopTTS() }, [])
+  useEffect(() => () => { audioRequest.current += 1; audioPreparation.current?.abort(); stopTTS() }, [])
   const topics = useMemo(() => [...new Set(vocabulary.flatMap((entry) => entry.topics))].sort((a, b) => a.localeCompare(b, 'ko')), [vocabulary])
   const academicCount = useMemo(() => vocabulary.reduce((count, entry) => count + (entry.academicCore ? 1 : 0), 0), [vocabulary])
 
@@ -68,18 +69,38 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
   const visible = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
   const stopVocabularyAudio = () => {
     audioRequest.current += 1
+    audioPreparation.current?.abort()
+    audioPreparation.current = null
     stopTTS()
     setAudio(null)
   }
   const changeFilter = (change: () => void) => { stopVocabularyAudio(); change(); setPage(0) }
   const playVocabularyAudio = async (key: string, text: string) => {
-    if (audio?.key === key && (audio.phase === 'loading' || audio.phase === 'playing')) { stopVocabularyAudio(); return }
+    if (audio?.key === key && audio.phase === 'playing') { stopVocabularyAudio(); return }
     const request = ++audioRequest.current
-    setAudio({ key, phase: 'loading', status: '음성을 준비하고 있습니다.' })
+    const prepared = audio?.key === key && (audio.phase === 'ready' || audio.phase === 'done')
+    if (!prepared) {
+      audioPreparation.current?.abort()
+      const controller = new AbortController()
+      audioPreparation.current = controller
+      setAudio({ key, phase: 'preparing', status: '음성을 변환하고 있습니다.' })
+      try {
+        await prepareSpeech(text, loadVoiceProfileId(), 'sentence', (status) => {
+          if (request === audioRequest.current) setAudio({ key, phase: 'preparing', status })
+        }, controller.signal)
+        if (request !== audioRequest.current || controller.signal.aborted) return
+        setAudio({ key, phase: 'ready', status: '음성 준비가 끝났습니다. 재생을 눌러 주세요.' })
+      } catch (error) {
+        if (request !== audioRequest.current || controller.signal.aborted) return
+        setAudio({ key, phase: 'error', status: error instanceof Error ? error.message : '음성을 준비하지 못했습니다.' })
+      }
+      return
+    }
+    setAudio({ key, phase: 'playing', status: '재생 중…' })
     try {
       const result = await playTTS(text, loadVoiceProfileId(), (status) => {
         if (request !== audioRequest.current) return
-        setAudio({ key, phase: status === '재생 중…' ? 'playing' : 'loading', status })
+        setAudio({ key, phase: 'playing', status })
       }, { speechMode: 'sentence' })
       if (request !== audioRequest.current || result === 'cancelled') return
       setAudio({ key, phase: 'done', status: result === 'fallback' ? '시스템 음성으로 재생했습니다.' : '재생이 끝났습니다.' })
@@ -123,9 +144,9 @@ function SpeakerIcon({ stopped = false }: { stopped?: boolean }) {
 }
 
 function VocabularyAudioButton({ label, accessibleLabel, state, onClick }: { label: string; accessibleLabel: string; state: VocabularyAudioState | null; onClick: () => void }) {
-  const busy = state?.phase === 'loading' || state?.phase === 'playing'
-  const buttonLabel = state?.phase === 'loading' ? '준비 중…' : state?.phase === 'playing' ? '정지' : state?.phase === 'done' || state?.phase === 'error' ? '다시 듣기' : label
-  return <div className="vocab-audio-control"><button className={busy ? 'vocab-audio-button vocab-audio-button--active' : 'vocab-audio-button'} aria-label={`${accessibleLabel} ${buttonLabel}`} aria-pressed={busy} onClick={onClick}><SpeakerIcon stopped={state?.phase === 'playing'} /><span>{buttonLabel}</span></button>{state && <small className={state.phase === 'error' ? 'vocab-audio-status vocab-audio-status--error' : 'vocab-audio-status'} aria-live="polite">{state.status}</small>}</div>
+  const busy = state?.phase === 'preparing' || state?.phase === 'playing'
+  const buttonLabel = state?.phase === 'preparing' ? '준비 중…' : state?.phase === 'ready' ? '재생' : state?.phase === 'playing' ? '정지' : state?.phase === 'done' ? '다시 듣기' : state?.phase === 'error' ? '준비 다시 시도' : `${label} 준비`
+  return <div className="vocab-audio-control"><button className={busy ? 'vocab-audio-button vocab-audio-button--active' : 'vocab-audio-button'} aria-label={`${accessibleLabel} ${buttonLabel}`} aria-pressed={state?.phase === 'playing'} disabled={state?.phase === 'preparing'} onClick={onClick}><SpeakerIcon stopped={state?.phase === 'playing'} /><span>{buttonLabel}</span></button>{state && <small className={state.phase === 'error' ? 'vocab-audio-status vocab-audio-status--error' : 'vocab-audio-status'} aria-live="polite">{state.status}</small>}</div>
 }
 
 function VocabularyCard({ entry, saved, audio, onPlay, onToggle }: { entry: LearningEntry; saved: boolean; audio: VocabularyAudioState | null; onPlay: (key: string, text: string) => void; onToggle: () => void }) {
