@@ -64,7 +64,7 @@ async function loadModel(requestId: string, backend: BrowserBackend) {
 }
 
 function ensureModel(requestId: string, wasmBaseUrl = configuredWasmBaseUrl, preferredBackend: BrowserBackend = modelBackend || 'wasm') {
-  configureRuntime(wasmBaseUrl)
+  if (preferredBackend === 'wasm') configureRuntime(wasmBaseUrl)
   if (!modelPromise) {
     modelBackend = preferredBackend
     modelPromise = loadModel(requestId, preferredBackend).catch((error) => {
