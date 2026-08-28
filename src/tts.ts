@@ -60,7 +60,8 @@ const DEFAULT_PROFILE: VoiceProfileId = 'toefl-balanced'
 const SPEAKER_RE = /(?:^|\s)([A-Z][A-Za-z ]{0,24}):\s*/g
 
 type ProgressHandler = (message: string, detail?: TTSProgressDetail) => void
-type PlayOptions = { maxWaitMs?: number }
+type SpeechMode = 'dialogue' | 'sentence'
+type PlayOptions = { maxWaitMs?: number; speechMode?: SpeechMode }
 type BrowserSpeechPart = { text: string; voice: string }
 type WorkerRequest = {
   chunks: Blob[]
@@ -308,6 +309,10 @@ function splitSpeakers(text: string) {
   }).filter((part) => part.text)
 }
 
+export function normalizeSentenceTTSInput(text: string) {
+  return text.replace(/\r\n?/g, '\n').split(/\n+/).map((line) => line.trim()).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
+}
+
 function chunkSpeechParts(parts: Array<{ text: string; speaker: number }>, maxLength = 120) {
   return parts.flatMap((part) => {
     if (part.text.length <= maxLength) return [part]
@@ -480,11 +485,12 @@ function systemVoice() {
   return voices.find((voice) => /samantha|ava|allison|zira|google us english/i.test(voice.name)) || voices.find((voice) => voice.lang.toLowerCase() === 'en-us') || voices[0]
 }
 
-function speakWithSystem(text: string, onProgress: ProgressHandler, signal: AbortSignal, generation: number) {
+function speakWithSystem(text: string, speechMode: SpeechMode, onProgress: ProgressHandler, signal: AbortSignal, generation: number) {
   return new Promise<void>((resolve, reject) => {
     if (!('speechSynthesis' in window)) { reject(new Error('이 브라우저는 음성 합성을 지원하지 않습니다.')); return }
     if (signal.aborted || generation !== playbackGeneration) { resolve(); return }
-    const utterance = new SpeechSynthesisUtterance(text.replace(SPEAKER_RE, ' '))
+    const spokenText = speechMode === 'sentence' ? normalizeSentenceTTSInput(text) : text.replace(SPEAKER_RE, ' ')
+    const utterance = new SpeechSynthesisUtterance(spokenText)
     const voice = systemVoice()
     if (voice) utterance.voice = voice
     utterance.lang = voice?.lang || 'en-US'
@@ -563,8 +569,8 @@ export async function prepareTTS(profileId: VoiceProfileId, onProgress: Progress
   return { engine: 'kokoro', backend: 'server', fallback: false, voices, clips: 0 }
 }
 
-function speechKey(text: string, profile: VoiceProfile) {
-  return `kokoro-q8-continuous-v3:${hasLocalTtsServer() ? 'server' : 'browser'}:${profile.id}:${profile.primary || 'system'}:${profile.secondary || ''}:${text}`
+function speechKey(text: string, profile: VoiceProfile, speechMode: SpeechMode) {
+  return `kokoro-q8-continuous-v4:${hasLocalTtsServer() ? 'server' : 'browser'}:${speechMode}:${profile.id}:${profile.primary || 'system'}:${profile.secondary || ''}:${text}`
 }
 
 async function mergeWavBlobs(blobs: Blob[]) {
@@ -599,10 +605,11 @@ async function mergeWavBlobs(blobs: Blob[]) {
   return new Blob([merged], { type: 'audio/wav' })
 }
 
-async function synthesizeSpeech(text: string, profile: VoiceProfile, onProgress: ProgressHandler, signal: AbortSignal, onChunk?: (blob: Blob, index: number) => void) {
+async function synthesizeSpeech(text: string, profile: VoiceProfile, speechMode: SpeechMode, onProgress: ProgressHandler, signal: AbortSignal, onChunk?: (blob: Blob, index: number) => void) {
   // Keep complete utterances together. The Worker may split exceptionally long
   // input for the model, but it joins all PCM output into one WAV before play.
-  const parts = chunkSpeechParts(splitSpeakers(text), 400)
+  const normalizedText = speechMode === 'sentence' ? normalizeSentenceTTSInput(text) : text
+  const parts = chunkSpeechParts(speechMode === 'sentence' ? [{ text: normalizedText, speaker: 0 }] : splitSpeakers(normalizedText), 400)
   if (!hasLocalTtsServer()) {
     return generateBrowserSpeech(parts.map((part) => ({
       text: part.text,
@@ -625,8 +632,8 @@ async function synthesizeSpeech(text: string, profile: VoiceProfile, onProgress:
   return [await mergeWavBlobs(blobs)]
 }
 
-async function getSpeech(text: string, profile: VoiceProfile, onProgress: ProgressHandler, controller: AbortController, source: 'playback' | 'precache', onChunk?: (blob: Blob, index: number) => void) {
-  const key = speechKey(text, profile)
+async function getSpeech(text: string, profile: VoiceProfile, speechMode: SpeechMode, onProgress: ProgressHandler, controller: AbortController, source: 'playback' | 'precache', onChunk?: (blob: Blob, index: number) => void) {
+  const key = speechKey(text, profile, speechMode)
   const cached = speechCache.get(key)
   if (cached) {
     speechCache.delete(key)
@@ -643,7 +650,7 @@ async function getSpeech(text: string, profile: VoiceProfile, onProgress: Progre
   const pending = pendingSpeech.get(key)
   if (pending) return pending
   if (source === 'playback') pendingPlaybackRequests.add(controller)
-  const synthesis = synthesizeSpeech(text, profile, onProgress, controller.signal, onChunk).then(async (blobs) => {
+  const synthesis = synthesizeSpeech(text, profile, speechMode, onProgress, controller.signal, onChunk).then(async (blobs) => {
       if (controller.signal.aborted) throw new DOMException('Audio request cancelled', 'AbortError')
       speechCache.set(key, blobs)
       while (speechCache.size > MAX_CACHED_SPEECHES) speechCache.delete(speechCache.keys().next().value!)
@@ -677,7 +684,7 @@ export async function prepareExamTTS(texts: string[], profileId: VoiceProfileId,
       if (generation !== examPrecacheGeneration || controller.signal.aborted) return
       const total = precacheTexts.length
       reportExamPrecache({ status: 'preparing', completed: index, total, current: index + 1, percent: Math.round(index / total * 100), message: `시험 음성 ${index + 1}/${total} 변환 중` })
-      await getSpeech(precacheTexts[index], profile, (_message, detail) => {
+      await getSpeech(precacheTexts[index], profile, 'dialogue', (_message, detail) => {
         if (generation !== examPrecacheGeneration || controller.signal.aborted) return
         const itemProgress = detail?.phase === 'generating' && detail.percent !== undefined ? detail.percent / 100 : 0
         reportExamPrecache({ status: 'preparing', completed: index, total, current: index + 1, percent: Math.min(99, Math.round((index + itemProgress) / total * 100)), message: `시험 음성 ${index + 1}/${total} 변환 중` })
@@ -707,7 +714,7 @@ function playElement(audio: HTMLAudioElement, generation: number, signal: AbortS
   })
 }
 
-async function speakWithKokoro(text: string, profile: VoiceProfile, onProgress: ProgressHandler, controller: AbortController, generation: number, maxWaitMs?: number, playbackAudio?: HTMLAudioElement | null) {
+async function speakWithKokoro(text: string, profile: VoiceProfile, speechMode: SpeechMode, onProgress: ProgressHandler, controller: AbortController, generation: number, maxWaitMs?: number, playbackAudio?: HTMLAudioElement | null) {
   const generationController = new AbortController()
   const cancelGeneration = () => generationController.abort()
   controller.signal.addEventListener('abort', cancelGeneration, { once: true })
@@ -730,7 +737,7 @@ async function speakWithKokoro(text: string, profile: VoiceProfile, onProgress: 
       await playElement(audio, generation, controller.signal, onProgress)
     })
   }
-  const speech = getSpeech(text, profile, onProgress, generationController, 'playback', queueChunk)
+  const speech = getSpeech(text, profile, speechMode, onProgress, generationController, 'playback', queueChunk)
   if (maxWaitMs) {
     const startState = await Promise.race<'started' | 'complete' | 'timeout'>([
       firstChunk.then(() => 'started'),
@@ -761,18 +768,19 @@ export async function playTTS(text: string, profileId: VoiceProfileId, onProgres
   const controller = new AbortController()
   activePlaybackController = controller
   const profile = getVoiceProfile(profileId)
+  const speechMode = options.speechMode || 'dialogue'
   const generation = playbackGeneration
   try {
     if (profile.id === 'system') {
-      await speakWithSystem(text, onProgress, controller.signal, generation)
+      await speakWithSystem(text, speechMode, onProgress, controller.signal, generation)
       if (controller.signal.aborted || generation !== playbackGeneration) return 'cancelled'
     }
     else {
-      const played = await speakWithKokoro(text, profile, onProgress, controller, generation, options.maxWaitMs, primedAudio)
+      const played = await speakWithKokoro(text, profile, speechMode, onProgress, controller, generation, options.maxWaitMs, primedAudio)
       if (controller.signal.aborted || generation !== playbackGeneration) return 'cancelled'
       if (played === false) {
         onProgress('AI 음성은 서버에서 계속 준비합니다. 이번에는 기기 음성으로 바로 재생합니다…')
-        await speakWithSystem(text, onProgress, controller.signal, generation)
+        await speakWithSystem(text, speechMode, onProgress, controller.signal, generation)
         if (controller.signal.aborted || generation !== playbackGeneration) return 'cancelled'
         return 'fallback'
       }
@@ -785,7 +793,7 @@ export async function playTTS(text: string, profileId: VoiceProfileId, onProgres
       const message = error instanceof Error ? error.message : String(error)
       recordTTSDiagnostic({ source: 'app', stage: 'playback-error', message, backend: activeBrowserBackend || undefined })
       onProgress(`AI 음성을 사용할 수 없어 시스템 음성으로 전환합니다… (${message})`)
-      await speakWithSystem(text, onProgress, controller.signal, generation)
+      await speakWithSystem(text, speechMode, onProgress, controller.signal, generation)
       if (controller.signal.aborted || generation !== playbackGeneration) return 'cancelled'
       return 'fallback'
     }

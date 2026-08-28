@@ -80,7 +80,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
       const result = await playTTS(text, loadVoiceProfileId(), (status) => {
         if (request !== audioRequest.current) return
         setAudio({ key, phase: status === '재생 중…' ? 'playing' : 'loading', status })
-      })
+      }, { speechMode: 'sentence' })
       if (request !== audioRequest.current || result === 'cancelled') return
       setAudio({ key, phase: 'done', status: result === 'fallback' ? '시스템 음성으로 재생했습니다.' : '재생이 끝났습니다.' })
     } catch (error) {
