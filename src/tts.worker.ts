@@ -2,8 +2,9 @@
 
 import { env, RawAudio } from '@huggingface/transformers'
 import { KokoroTTS, TextSplitterStream } from 'kokoro-js'
+import { applyQuestionRise, type SpeechIntonation } from './ttsProsody'
 
-type SpeechPart = { text: string; voice: string }
+type SpeechPart = { text: string; voice: string; intonation: SpeechIntonation }
 type BrowserBackend = 'webgpu' | 'wasm'
 type InitMessage = { type: 'init'; requestId: string; wasmBaseUrl: string; backend: BrowserBackend; threads?: number }
 type GenerateMessage = { type: 'generate'; requestId: string; parts: SpeechPart[] }
@@ -184,7 +185,7 @@ async function generate(message: GenerateMessage) {
     for (let partIndex = 0; partIndex < message.parts.length; partIndex += 1) {
       const part = message.parts[partIndex]
       if (cancelledRequests.has(message.requestId)) break
-      diagnose(message.requestId, 'part-start', `${partIndex + 1}번 텍스트 조각 추론을 시작합니다.`, { partIndex, characters: part.text.length, voice: part.voice })
+      diagnose(message.requestId, 'part-start', `${partIndex + 1}번 텍스트 조각 추론을 시작합니다 (${part.voice}).`, { partIndex, characters: part.text.length, voice: part.voice, intonation: part.intonation })
       activePartRequestId = message.requestId
       activePartStartedAt = performance.now()
       phonemizerSlowTimer = setTimeout(() => {
@@ -197,7 +198,7 @@ async function generate(message: GenerateMessage) {
       splitter.close()
       for await (const output of model.stream(splitter, { voice: part.voice as KokoroVoice, speed: 1 })) {
         if (cancelledRequests.has(message.requestId)) break
-        audioChunks.push(output.audio.data)
+        audioChunks.push(part.intonation === 'question' ? applyQuestionRise(output.audio.data, output.audio.sampling_rate) : output.audio.data)
         sampleRate = output.audio.sampling_rate
         renderedText.push(output.text)
         segmentCount += 1

@@ -1,5 +1,6 @@
 import { cacheSpeech, readCachedSpeech } from './ttsAudioCache'
 import { recordTTSDiagnostic } from './ttsDiagnostics'
+import { applyQuestionRise, splitQuestionProsody, type SpeechIntonation } from './ttsProsody'
 
 export type VoiceProfileId = 'toefl-balanced' | 'us-female' | 'us-male' | 'uk-female' | 'uk-male' | 'system'
 
@@ -46,10 +47,10 @@ export type TTSRuntimeInfo = { runtime: 'native-webgpu-ep' | 'wasm'; runtimeVari
 
 export const VOICE_PROFILES: VoiceProfile[] = [
   { id: 'toefl-balanced', name: 'TOEFL 균형형', shortLabel: 'AI · 미국식 혼합', description: '대화에서는 여성·남성 화자를 자동으로 나누고, 강의에서는 자연스러운 미국식 음성을 사용합니다.', accent: '미국식 · 여성/남성', primary: 'af_heart', secondary: 'am_michael', recommended: true },
-  { id: 'us-female', name: 'Heart', shortLabel: 'AI · 미국 여성', description: '명료하면서도 부드러운 미국식 여성 음성입니다. Kokoro 음성 중 품질 등급이 가장 높습니다.', accent: '미국식 · 여성', primary: 'af_heart' },
-  { id: 'us-male', name: 'Michael', shortLabel: 'AI · 미국 남성', description: '학술 강의와 캠퍼스 안내에 잘 어울리는 차분한 미국식 남성 음성입니다.', accent: '미국식 · 남성', primary: 'am_michael' },
-  { id: 'uk-female', name: 'Emma', shortLabel: 'AI · 영국 여성', description: '다양한 영어 억양을 연습할 수 있는 안정적인 영국식 여성 음성입니다.', accent: '영국식 · 여성', primary: 'bf_emma' },
-  { id: 'uk-male', name: 'George', shortLabel: 'AI · 영국 남성', description: '강의와 인터뷰 연습에 적합한 또렷한 영국식 남성 음성입니다.', accent: '영국식 · 남성', primary: 'bm_george' },
+  { id: 'us-female', name: 'Heart', shortLabel: 'AI · 미국 여성 중심', description: 'Heart를 주 화자로 사용하고 대화 상대는 Michael로 자동 구분합니다.', accent: '미국식 · 여성 중심/남성 상대', primary: 'af_heart', secondary: 'am_michael' },
+  { id: 'us-male', name: 'Michael', shortLabel: 'AI · 미국 남성 중심', description: 'Michael을 주 화자로 사용하고 대화 상대는 Heart로 자동 구분합니다.', accent: '미국식 · 남성 중심/여성 상대', primary: 'am_michael', secondary: 'af_heart' },
+  { id: 'uk-female', name: 'Emma', shortLabel: 'AI · 영국 여성 중심', description: 'Emma를 주 화자로 사용하고 대화 상대는 George로 자동 구분합니다.', accent: '영국식 · 여성 중심/남성 상대', primary: 'bf_emma', secondary: 'bm_george' },
+  { id: 'uk-male', name: 'George', shortLabel: 'AI · 영국 남성 중심', description: 'George를 주 화자로 사용하고 대화 상대는 Emma로 자동 구분합니다.', accent: '영국식 · 남성 중심/여성 상대', primary: 'bm_george', secondary: 'bf_emma' },
   { id: 'system', name: '기기 기본 음성', shortLabel: '시스템 영어 음성', description: '모델 다운로드 없이 기기에 설치된 영어 음성을 사용합니다. AI 음성이 작동하지 않을 때의 안전한 대안입니다.', accent: '기기별로 다름' },
 ]
 
@@ -57,13 +58,13 @@ const PROFILE_BY_ID = new Map(VOICE_PROFILES.map((profile) => [profile.id, profi
 const STORAGE_KEY = 'focus-english-lab:voice-profile:v1'
 const BACKEND_STORAGE_KEY = 'focus-english-lab:tts-backend:v1'
 const DEFAULT_PROFILE: VoiceProfileId = 'toefl-balanced'
-const SPEAKER_RE = /(?:^|\s)([A-Z][A-Za-z ]{0,24}):\s*/g
+const SPEAKER_RE = /(?:^|\s)([A-Z][A-Za-z .'-]{0,47}):\s*/g
 
 type ProgressHandler = (message: string, detail?: TTSProgressDetail) => void
 export type SpeechMode = 'dialogue' | 'sentence'
 export type ExamTTSAudio = { text: string; speechMode: SpeechMode }
 type PlayOptions = { maxWaitMs?: number; speechMode?: SpeechMode }
-type BrowserSpeechPart = { text: string; voice: string }
+type BrowserSpeechPart = { text: string; voice: string; intonation: SpeechIntonation }
 type WorkerRequest = {
   chunks: Blob[]
   resolve: (blobs: Blob[]) => void
@@ -297,7 +298,7 @@ export function subscribeExamTTSPrecache(listener: (state: ExamTTSPrecacheState)
   return () => { examPrecacheListeners.delete(listener) }
 }
 
-function splitSpeakers(text: string) {
+export function splitSpeakers(text: string) {
   const matches = [...text.matchAll(SPEAKER_RE)]
   if (!matches.length) return [{ text: text.trim(), speaker: 0 }]
   const speakers = new Map<string, number>()
@@ -319,23 +320,34 @@ export function examSpeechMode(section: 'listening' | 'speaking', title: string)
   return 'dialogue'
 }
 
-function chunkSpeechParts(parts: Array<{ text: string; speaker: number }>, maxLength = 120) {
+function chunkSpeechParts<T extends { text: string; speaker: number }>(parts: T[], maxLength = 120): T[] {
   return parts.flatMap((part) => {
     if (part.text.length <= maxLength) return [part]
     const sentences = part.text.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((value) => value.trim()).filter(Boolean) || [part.text]
-    const chunks: Array<{ text: string; speaker: number }> = []
+    const chunks: T[] = []
     let current = ''
     for (const sentence of sentences) {
-      if (current && current.length + sentence.length + 1 > maxLength) { chunks.push({ text: current, speaker: part.speaker }); current = '' }
+      if (current && current.length + sentence.length + 1 > maxLength) { chunks.push({ ...part, text: current }); current = '' }
       if (sentence.length <= maxLength) { current = current ? `${current} ${sentence}` : sentence; continue }
       for (const word of sentence.split(/\s+/)) {
-        if (current && current.length + word.length + 1 > maxLength) { chunks.push({ text: current, speaker: part.speaker }); current = '' }
+        if (current && current.length + word.length + 1 > maxLength) { chunks.push({ ...part, text: current }); current = '' }
         current = current ? `${current} ${word}` : word
       }
     }
-    if (current) chunks.push({ text: current, speaker: part.speaker })
+    if (current) chunks.push({ ...part, text: current })
     return chunks
   })
+}
+
+function stableParity(text: string) {
+  let hash = 0
+  for (let index = 0; index < text.length; index += 1) hash = (hash * 31 + text.charCodeAt(index)) | 0
+  return Math.abs(hash) % 2
+}
+
+export function selectSpeechVoice(profile: VoiceProfile, fullText: string, speaker: number) {
+  const offset = profile.id === 'toefl-balanced' ? stableParity(fullText) : 0
+  return profile.secondary && (speaker + offset) % 2 === 1 ? profile.secondary : profile.primary!
 }
 
 function reportBrowserKokoroProgress(message: string, detail: TTSProgressDetail) {
@@ -486,18 +498,19 @@ async function generateBrowserSpeech(parts: BrowserSpeechPart[], onProgress: Pro
   })
 }
 
-function systemVoice() {
+function systemVoicePair() {
   const voices = window.speechSynthesis.getVoices().filter((voice) => voice.lang.toLowerCase().startsWith('en'))
-  return voices.find((voice) => /samantha|ava|allison|zira|google us english/i.test(voice.name)) || voices.find((voice) => voice.lang.toLowerCase() === 'en-us') || voices[0]
+  const female = voices.find((voice) => /samantha|ava|allison|zira|victoria|serena|karen|moira|tessa|google us english/i.test(voice.name))
+  const male = voices.find((voice) => /daniel|alex|tom|fred|aaron|gordon|arthur|oliver|rishi/i.test(voice.name))
+  const primary = female || voices.find((voice) => voice.lang.toLowerCase() === 'en-us') || voices[0]
+  const secondary = male || voices.find((voice) => voice !== primary) || primary
+  return [primary, secondary]
 }
 
-function speakWithSystem(text: string, speechMode: SpeechMode, onProgress: ProgressHandler, signal: AbortSignal, generation: number) {
+function speakSystemPart(text: string, voice: SpeechSynthesisVoice | undefined, onProgress: ProgressHandler, signal: AbortSignal, generation: number) {
   return new Promise<void>((resolve, reject) => {
-    if (!('speechSynthesis' in window)) { reject(new Error('이 브라우저는 음성 합성을 지원하지 않습니다.')); return }
     if (signal.aborted || generation !== playbackGeneration) { resolve(); return }
-    const spokenText = speechMode === 'sentence' ? normalizeSentenceTTSInput(text) : text.replace(SPEAKER_RE, ' ')
-    const utterance = new SpeechSynthesisUtterance(spokenText)
-    const voice = systemVoice()
+    const utterance = new SpeechSynthesisUtterance(text)
     if (voice) utterance.voice = voice
     utterance.lang = voice?.lang || 'en-US'
     utterance.rate = .96
@@ -535,6 +548,17 @@ function speakWithSystem(text: string, speechMode: SpeechMode, onProgress: Progr
     if (signal.aborted || generation !== playbackGeneration) { finish(); return }
     window.speechSynthesis.speak(utterance)
   })
+}
+
+async function speakWithSystem(text: string, speechMode: SpeechMode, onProgress: ProgressHandler, signal: AbortSignal, generation: number) {
+  if (!('speechSynthesis' in window)) throw new Error('이 브라우저는 음성 합성을 지원하지 않습니다.')
+  const voices = systemVoicePair()
+  const parts = speechMode === 'sentence' ? [{ text: normalizeSentenceTTSInput(text), speaker: 0 }] : splitSpeakers(text)
+  window.speechSynthesis.cancel()
+  for (const part of parts) {
+    if (signal.aborted || generation !== playbackGeneration) return
+    await speakSystemPart(part.text, voices[part.speaker % 2], onProgress, signal, generation)
+  }
 }
 
 function prepareSystemVoices(onProgress: ProgressHandler) {
@@ -576,7 +600,51 @@ export async function prepareTTS(profileId: VoiceProfileId, onProgress: Progress
 }
 
 function speechKey(text: string, profile: VoiceProfile, speechMode: SpeechMode) {
-  return `kokoro-q8-continuous-v4:${hasLocalTtsServer() ? 'server' : 'browser'}:${speechMode}:${profile.id}:${profile.primary || 'system'}:${profile.secondary || ''}:${text}`
+  return `kokoro-q8-prosody-v5:${hasLocalTtsServer() ? 'server' : 'browser'}:${speechMode}:${profile.id}:${profile.primary || 'system'}:${profile.secondary || ''}:${text}`
+}
+
+function encodeFloatWav(samples: Float32Array, sampleRate: number) {
+  const bytes = new Uint8Array(44 + samples.byteLength)
+  const view = new DataView(bytes.buffer)
+  const write = (offset: number, value: string) => { for (let index = 0; index < value.length; index += 1) bytes[offset + index] = value.charCodeAt(index) }
+  write(0, 'RIFF'); view.setUint32(4, bytes.length - 8, true); write(8, 'WAVE'); write(12, 'fmt ')
+  view.setUint32(16, 16, true); view.setUint16(20, 3, true); view.setUint16(22, 1, true)
+  view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 4, true); view.setUint16(32, 4, true); view.setUint16(34, 32, true)
+  write(36, 'data'); view.setUint32(40, samples.byteLength, true)
+  new Float32Array(bytes.buffer, 44).set(samples)
+  return new Blob([bytes], { type: 'audio/wav' })
+}
+
+async function applyQuestionRiseToWav(blob: Blob) {
+  const buffer = await blob.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+  const view = new DataView(buffer)
+  let offset = 12
+  let format = 0
+  let channels = 0
+  let sampleRate = 0
+  let bits = 0
+  let dataOffset = 0
+  let dataSize = 0
+  while (offset + 8 <= bytes.length) {
+    const id = String.fromCharCode(...bytes.slice(offset, offset + 4))
+    const size = view.getUint32(offset + 4, true)
+    if (id === 'fmt ' && size >= 16) {
+      format = view.getUint16(offset + 8, true); channels = view.getUint16(offset + 10, true)
+      sampleRate = view.getUint32(offset + 12, true); bits = view.getUint16(offset + 22, true)
+    }
+    if (id === 'data') { dataOffset = offset + 8; dataSize = Math.min(size, bytes.length - dataOffset); break }
+    offset += 8 + size + (size % 2)
+  }
+  if (!dataOffset || channels !== 1 || !sampleRate) return blob
+  let samples: Float32Array
+  if (format === 3 && bits === 32) samples = new Float32Array(buffer.slice(dataOffset, dataOffset + dataSize))
+  else if (format === 1 && bits === 16) {
+    const count = Math.floor(dataSize / 2)
+    samples = new Float32Array(count)
+    for (let index = 0; index < count; index += 1) samples[index] = view.getInt16(dataOffset + index * 2, true) / 32768
+  } else return blob
+  return encodeFloatWav(applyQuestionRise(samples, sampleRate), sampleRate)
 }
 
 async function mergeWavBlobs(blobs: Blob[]) {
@@ -615,25 +683,28 @@ async function synthesizeSpeech(text: string, profile: VoiceProfile, speechMode:
   // Keep complete utterances together. The Worker may split exceptionally long
   // input for the model, but it joins all PCM output into one WAV before play.
   const normalizedText = speechMode === 'sentence' ? normalizeSentenceTTSInput(text) : text
-  const parts = chunkSpeechParts(speechMode === 'sentence' ? [{ text: normalizedText, speaker: 0 }] : splitSpeakers(normalizedText), 400)
+  const speakerParts = speechMode === 'sentence' ? [{ text: normalizedText, speaker: 0 }] : splitSpeakers(normalizedText)
+  const parts = chunkSpeechParts(splitQuestionProsody(speakerParts), 400)
   if (!hasLocalTtsServer()) {
     return generateBrowserSpeech(parts.map((part) => ({
       text: part.text,
-      voice: part.speaker % 2 === 1 && profile.secondary ? profile.secondary : profile.primary!,
+      voice: selectSpeechVoice(profile, normalizedText, part.speaker),
+      intonation: part.intonation,
     })), onProgress, signal, onChunk)
   }
   const blobs: Blob[] = []
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index]
     onProgress(`서버 음성 불러오는 중… ${index + 1}/${parts.length}`)
-    const voice = part.speaker % 2 === 1 && profile.secondary ? profile.secondary : profile.primary!
+    const voice = selectSpeechVoice(profile, normalizedText, part.speaker)
     if (signal.aborted) throw new DOMException('Audio request cancelled', 'AbortError')
     const response = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: part.text, voice, speed: 1 }), signal })
     if (!response.ok) {
       const payload = await response.json().catch(() => ({})) as { error?: string }
       throw new Error(payload.error || '로컬 음성 서버에서 음성을 만들지 못했습니다.')
     }
-    blobs.push(await response.blob())
+    const blob = await response.blob()
+    blobs.push(part.intonation === 'question' ? await applyQuestionRiseToWav(blob) : blob)
   }
   return [await mergeWavBlobs(blobs)]
 }
