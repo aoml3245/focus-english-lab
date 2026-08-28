@@ -1,6 +1,7 @@
 import type { BaseItem, Section } from './types'
 import { BASE_CONTEXT_TOPIC_COUNT, CONTEXT_ITEMS } from './contextBank'
 import { EXPANSION_ITEMS, EXPANSION_TOPIC_COUNT } from './expansionBank'
+import { NEW_TOPIC_COUNT, NEW_TOPIC_ITEMS } from './newTopicBank'
 import { prepareSentenceTiles } from './sentenceTiles'
 
 type Difficulty = NonNullable<BaseItem['difficulty']>
@@ -121,10 +122,10 @@ const speaking: BaseItem[] = [
   ...INTERVIEWS.flatMap(([topic, difficulty, questions], i) => questions.map((audioText, j) => ({ ...make(`s-interview-${i}-${j}`, 'speaking', 'interview', 'Take an Interview', topic, difficulty, 45), instruction: '면접 질문에 충분히 답하세요. 준비 시간은 없습니다.', audioText }))),
 ]
 
-export const QUESTION_BANK: BaseItem[] = [...reading, ...listening, ...writing, ...speaking, ...CONTEXT_ITEMS, ...EXPANSION_ITEMS]
-export const CONTEXT_TOPIC_COUNT = BASE_CONTEXT_TOPIC_COUNT + EXPANSION_TOPIC_COUNT
+export const QUESTION_BANK: BaseItem[] = [...reading, ...listening, ...writing, ...speaking, ...CONTEXT_ITEMS, ...EXPANSION_ITEMS, ...NEW_TOPIC_ITEMS]
+export const CONTEXT_TOPIC_COUNT = BASE_CONTEXT_TOPIC_COUNT + EXPANSION_TOPIC_COUNT + NEW_TOPIC_COUNT
 const validateQuestionBank = () => {
-  if (QUESTION_BANK.length !== 1000) throw new Error(`Expected 1000 questions, received ${QUESTION_BANK.length}.`)
+  if (QUESTION_BANK.length !== 1360) throw new Error(`Expected 1360 questions, received ${QUESTION_BANK.length}.`)
   const ids = new Set(QUESTION_BANK.map((item) => item.id))
   if (ids.size !== QUESTION_BANK.length) throw new Error('Question IDs must be unique.')
   QUESTION_BANK.forEach((item) => {

@@ -18,7 +18,7 @@
   - 준비 시간 없는 실제 대화, 후속 질문, 설명·서술·논증의 말하기 목적을 참고했습니다.
 - [ETS TOEFL Writing Scoring Guide](https://www.ets.org/content/dam/ets-org/pdfs/toefl/writing-rubrics.pdf)
   - 0–5점 기준의 과제 목적 지원, 내용 전개, 구문·어휘 범위, 정확성, 이메일의 공손성·격식·정보 조직 기준을 Writing 코칭에 반영했습니다.
-- [ETS TOEFL iBT Test Specifications 2026](https://www.ets.org/content/dam/ets-india/pdfs/toefl/toefl-ibt-test-specifications-2026.pdf)
+- [ETS TOEFL iBT Test Specifications 2026](https://www.in.ets.org/content/dam/ets-org/pdfs/toefl/toefl-ibt-test-specifications-2026.pdf)
   - Build a Sentence, Write an Email, Write for an Academic Discussion 구성과 문법 정확성·응집성·명료성·어조·논리적 전개 요구를 반영했습니다.
 - [ETS TOEFL iBT Writing Section](https://www.ets.org/toefl/test-takers/ibt/about/content/writing.html)
   - Build a Sentence는 단어나 구를 배열해 완전하고 문법적인 문장 또는 질문을 만드는 과제라는 공식 설명을 반영했습니다.
@@ -33,7 +33,7 @@
 
 ## 적용 방식
 
-53개 신규 주제마다 다음 14문항을 생성합니다.
+기존 확장 묶음은 53개 주제마다 다음 14문항을 생성했습니다.
 
 - 학술 Reading 2문항: 연구 결과와 한계
 - 생활 Reading 2문항: 공지, 조치, 후속 절차
@@ -42,8 +42,10 @@
 - Writing 3문항: 문장 구성, 공식 이메일, 학술 토론
 - Speaking 3문항: 문장 반복, 개인 경험, 근거 기반 판단
 
-신규 742문항을 기존 258문항에 더해 총 1,000문항으로 구성했습니다.
+기존 1,000문항에 ETS 2026 명세에 맞춰 난이도를 유형별로 재조정한 20개 신규 주제·360문항을 더해 총 1,360문항으로 구성했습니다.
 
-Build a Sentence 73문항은 정답 순서와 별도로 선택 타일을 결정적으로 섞습니다. 정답은 5–8개의 타일로 구성하며 각 타일은 최대 3단어의 짧은 구로 제한했습니다. 공식 예시처럼 일부 문항에는 정답에 쓰이지 않는 방해 타일 하나를 포함합니다.
+추가 20개 주제는 주제당 18문항입니다. Complete the Words 1, 학술 Reading 3, 생활 Reading 2, Listen and Choose a Response 1, 대화 Listening 2, 강의 Listening 2, Writing 3, Speaking 4문항으로 구성했습니다. 생활 안내·짧은 응답·이메일·짧은 따라 말하기는 전문 배경지식을 요구하지 않는 B1–B2 수준으로 제한했고, C1 어휘와 복잡한 내용은 학술 지문·강의에 집중했습니다. 학술 지문·강의도 항상 지문 안에서 필요한 맥락을 제공해 사전 전문지식이 없어도 풀 수 있게 했습니다.
+
+Build a Sentence 93문항은 정답 순서와 별도로 선택 타일을 결정적으로 섞습니다. 정답은 5–8개의 타일로 구성하며 추가 20문항의 각 타일은 최대 2단어의 짧은 구로 제한했습니다. 공식 예시처럼 일부 문항에는 정답에 쓰이지 않는 방해 타일 하나를 포함합니다.
 
 학술 Reading 생성 지문에는 `systematic`, `preliminary`, `constraint`, `qualify`, `subsequent`, `evaluate`, `persist` 등 여러 분야에서 재사용되는 학술 어휘를 연구 절차·결과 해석 문맥에 넣었습니다. 두 번째 Reading 문항은 이 가운데 한 단어의 문맥상 의미를 묻도록 바꿨습니다. 생활 안내·대화·강의·Academic Discussion에도 `implement`, `adverse`, `intervention`, `valid`, `constitute`, `tentative`, `definitive` 같은 어휘를 기능에 맞게 분산했습니다.

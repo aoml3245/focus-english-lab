@@ -59,7 +59,7 @@ export default function ExamData({ onBack, onActivate }: { onBack: () => void; o
   const restore = () => {
     clearImportedExamPack()
     setInfo(getActiveExamPackInfo())
-    setStatus('기본 1,000문항 문제은행으로 돌아왔습니다.')
+    setStatus(`기본 ${QUESTION_BANK.length.toLocaleString('ko-KR')}문항 문제은행으로 돌아왔습니다.`)
     window.setTimeout(onActivate, 350)
   }
 
@@ -71,7 +71,7 @@ export default function ExamData({ onBack, onActivate }: { onBack: () => void; o
       <div className="data-actions-grid">
         <section><h2>파일 열기</h2><p>문항 ID와 정답 범위를 검사한 뒤 브라우저에 저장합니다.</p><input ref={inputRef} className="visually-hidden" type="file" accept=".json,.felpack.json,application/json" onChange={(event) => void importFile(event.target.files?.[0])} /><button className="button button--primary" onClick={() => inputRef.current?.click()}>시험 데이터 파일 선택</button></section>
         <section><h2>현재 데이터 보관</h2><p>현재 사용 중인 문제은행을 다른 기기로 옮길 수 있습니다.</p><button className="button button--secondary" onClick={() => downloadExamPack(createExamPack(getActivePracticeItems(), info.title))}>현재 문제은행 내려받기</button></section>
-        <section><h2>기본 1,000문항 받기</h2><p>독창적으로 작성된 기본 문제만 포함된 휴대용 파일입니다.</p><button className="button button--secondary" onClick={() => downloadExamPack(createExamPack(QUESTION_BANK))}>기본 데이터 내려받기</button></section>
+        <section><h2>기본 {QUESTION_BANK.length.toLocaleString('ko-KR')}문항 받기</h2><p>독창적으로 작성된 기본 문제만 포함된 휴대용 파일입니다.</p><button className="button button--secondary" onClick={() => downloadExamPack(createExamPack(QUESTION_BANK))}>기본 데이터 내려받기</button></section>
         <section><h2>기본 데이터로 복원</h2><p>가져온 파일을 해제합니다. 학습 기록은 지워지지 않습니다.</p><button className="button button--secondary" disabled={info.source === 'built-in'} onClick={restore}>기본 문제은행 사용</button></section>
       </div>
       <p className="data-status" role="status" aria-live="polite">{status}</p>

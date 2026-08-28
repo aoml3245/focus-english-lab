@@ -14,7 +14,7 @@ describe('vocabulary corpus export', () => {
       texts: [item.passage, item.audioText, item.prompt, item.instruction, item.explanation, item.starter, ...(item.options || []), ...(item.words || [])].filter(Boolean),
     }))
     writeFileSync(destination, JSON.stringify(corpus, null, 2))
-    expect(corpus).toHaveLength(1000)
+    expect(corpus).toHaveLength(1360)
 
     const generatedAcademicReadings = QUESTION_BANK.filter((item) => /^x-\d+-r1$/.test(item.id))
     expect(generatedAcademicReadings).toHaveLength(53)
@@ -37,7 +37,7 @@ describe('vocabulary corpus export', () => {
 
   it('uses ETS-style shuffled short tiles for every Build a Sentence item', () => {
     const sentenceItems = QUESTION_BANK.filter((item) => item.kind === 'sentence-build')
-    expect(sentenceItems).toHaveLength(73)
+    expect(sentenceItems).toHaveLength(93)
     for (const item of sentenceItems) {
       const correct = String(item.answer).split('|')
       expect(correct.length).toBeGreaterThanOrEqual(5)
