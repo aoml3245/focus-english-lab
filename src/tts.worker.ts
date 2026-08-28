@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import { env } from '@huggingface/transformers'
+import { env, RawAudio } from '@huggingface/transformers'
 import { KokoroTTS, TextSplitterStream } from 'kokoro-js'
 
 type SpeechPart = { text: string; voice: string }
@@ -176,7 +176,10 @@ async function generate(message: GenerateMessage) {
   try {
     diagnose(message.requestId, 'generation-start', `음성 생성을 시작합니다 (${message.parts.length}개 조각).`, { parts: message.parts.length })
     const model = await ensureModel(message.requestId)
-    let chunkIndex = 0
+    const audioChunks: Float32Array[] = []
+    let sampleRate = 24_000
+    let segmentCount = 0
+    const renderedText: string[] = []
     for (let partIndex = 0; partIndex < message.parts.length; partIndex += 1) {
       const part = message.parts[partIndex]
       if (cancelledRequests.has(message.requestId)) break
@@ -193,10 +196,11 @@ async function generate(message: GenerateMessage) {
       splitter.close()
       for await (const output of model.stream(splitter, { voice: part.voice as KokoroVoice, speed: 1 })) {
         if (cancelledRequests.has(message.requestId)) break
-        const blob = output.audio.toBlob()
-        diagnose(message.requestId, 'first-chunk', `${chunkIndex + 1}번 오디오 조각이 생성됐습니다.`, { chunkIndex, bytes: blob.size })
-        post('chunk', message.requestId, { blob, index: chunkIndex, text: output.text })
-        chunkIndex += 1
+        audioChunks.push(output.audio.data)
+        sampleRate = output.audio.sampling_rate
+        renderedText.push(output.text)
+        segmentCount += 1
+        diagnose(message.requestId, 'segment-ready', `${segmentCount}번 내부 음성 구간을 이어 붙였습니다.`, { segmentCount, samples: output.audio.data.length })
       }
       if (phonemizerSlowTimer) clearTimeout(phonemizerSlowTimer)
       phonemizerSlowTimer = null
@@ -208,8 +212,11 @@ async function generate(message: GenerateMessage) {
       post('cancelled', message.requestId)
     }
     else {
-      diagnose(message.requestId, 'generation-done', `음성 생성을 마쳤습니다 (${chunkIndex}개 오디오 조각).`, { chunks: chunkIndex })
-      post('done', message.requestId, { chunks: chunkIndex, backend: modelBackend })
+      const blob = new RawAudio(audioChunks, sampleRate).toBlob()
+      diagnose(message.requestId, 'first-chunk', `전체 문장을 하나의 연속 오디오로 완성했습니다.`, { segments: segmentCount, bytes: blob.size })
+      post('chunk', message.requestId, { blob, index: 0, text: renderedText.join(' ') })
+      diagnose(message.requestId, 'generation-done', `음성 생성을 마쳤습니다 (내부 ${segmentCount}구간 → 연속 오디오 1개).`, { chunks: 1, segments: segmentCount })
+      post('done', message.requestId, { chunks: 1, backend: modelBackend })
     }
   } catch (error) {
     diagnose(message.requestId, 'generation-error', error instanceof Error ? error.message : '음성 생성 오류')

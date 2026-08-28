@@ -41,7 +41,7 @@ export function AudioPrompt({ text, autoPlay = false, onPlaybackChange }: { text
       const result = await playTTS(text, loadVoiceProfileId(), (message) => {
         setStatus(message)
         setState(message === '재생 중…' ? 'playing' : 'loading')
-      }, { maxWaitMs: 1500 })
+      }, { maxWaitMs: 60_000 })
       if (result === 'cancelled') return
       setState('played')
       setStatus(result === 'fallback' ? '시스템 음성으로 재생했습니다.' : '한 번 재생했습니다.')

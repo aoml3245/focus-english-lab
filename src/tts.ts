@@ -434,7 +434,7 @@ async function generateBrowserSpeech(parts: BrowserSpeechPart[], onProgress: Pro
       resolve: finish(resolve),
       reject: finish(reject),
       onChunk: (blob, index) => {
-        onProgress(`${activeBrowserBackend === 'webgpu' ? 'WebGPU(Metal)' : 'WASM'} 음성 스트리밍 중… ${index + 1}`, { phase: 'generating', cached: true, backend: activeBrowserBackend || undefined })
+        onProgress(`${activeBrowserBackend === 'webgpu' ? 'WebGPU(Metal)' : 'WASM'} 연속 음성을 완성했습니다.`, { phase: 'generating', cached: true, backend: activeBrowserBackend || undefined })
         onChunk?.(blob, index)
       },
       abort: () => signal.removeEventListener('abort', abort),
@@ -532,11 +532,45 @@ export async function prepareTTS(profileId: VoiceProfileId, onProgress: Progress
 }
 
 function speechKey(text: string, profile: VoiceProfile) {
-  return `kokoro-q8-stream-v2:${profile.id}:${profile.primary || 'system'}:${profile.secondary || ''}:${text}`
+  return `kokoro-q8-continuous-v3:${hasLocalTtsServer() ? 'server' : 'browser'}:${profile.id}:${profile.primary || 'system'}:${profile.secondary || ''}:${text}`
+}
+
+async function mergeWavBlobs(blobs: Blob[]) {
+  if (blobs.length <= 1) return blobs[0]
+  const buffers = await Promise.all(blobs.map((blob) => blob.arrayBuffer()))
+  const parsed = buffers.map((buffer) => {
+    const bytes = new Uint8Array(buffer)
+    const view = new DataView(buffer)
+    let offset = 12
+    while (offset + 8 <= bytes.length) {
+      const id = String.fromCharCode(...bytes.slice(offset, offset + 4))
+      const size = view.getUint32(offset + 4, true)
+      if (id === 'data' && offset + 8 + size <= bytes.length) {
+        return { bytes, dataOffset: offset + 8, dataSizeOffset: offset + 4, dataSize: size }
+      }
+      offset += 8 + size + (size % 2)
+    }
+    throw new Error('로컬 WAV 데이터 구간을 찾지 못했습니다.')
+  })
+  const first = parsed[0]
+  const totalDataSize = parsed.reduce((sum, value) => sum + value.dataSize, 0)
+  const merged = new Uint8Array(first.dataOffset + totalDataSize)
+  merged.set(first.bytes.slice(0, first.dataOffset))
+  let writeOffset = first.dataOffset
+  for (const value of parsed) {
+    merged.set(value.bytes.slice(value.dataOffset, value.dataOffset + value.dataSize), writeOffset)
+    writeOffset += value.dataSize
+  }
+  const mergedView = new DataView(merged.buffer)
+  mergedView.setUint32(4, merged.byteLength - 8, true)
+  mergedView.setUint32(first.dataSizeOffset, totalDataSize, true)
+  return new Blob([merged], { type: 'audio/wav' })
 }
 
 async function synthesizeSpeech(text: string, profile: VoiceProfile, onProgress: ProgressHandler, signal: AbortSignal, onChunk?: (blob: Blob, index: number) => void) {
-  const parts = chunkSpeechParts(splitSpeakers(text), !hasLocalTtsServer() && isIOSBrowser() && resolveTTSBackend() === 'wasm' ? 42 : 120)
+  // Keep complete utterances together. The Worker may split exceptionally long
+  // input for the model, but it joins all PCM output into one WAV before play.
+  const parts = chunkSpeechParts(splitSpeakers(text), 400)
   if (!hasLocalTtsServer()) {
     return generateBrowserSpeech(parts.map((part) => ({
       text: part.text,
@@ -556,7 +590,7 @@ async function synthesizeSpeech(text: string, profile: VoiceProfile, onProgress:
     }
     blobs.push(await response.blob())
   }
-  return blobs
+  return [await mergeWavBlobs(blobs)]
 }
 
 async function getSpeech(text: string, profile: VoiceProfile, onProgress: ProgressHandler, controller: AbortController, source: 'playback' | 'precache', onChunk?: (blob: Blob, index: number) => void) {
