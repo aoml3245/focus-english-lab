@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LearningEntry } from '../src/learning'
-import { buildStudyQuestions, isObjectiveAnswerCorrect, selectStudyEntries } from '../src/studyGamesEngine'
+import { advanceMasteryProgress, buildMasteryOptions, buildStudyQuestions, createMasteryProgress, isObjectiveAnswerCorrect, maskMasterySentence, masteryMinimumAttempts, MASTERY_STAGES, selectStudyEntries } from '../src/studyGamesEngine'
 
 const entry = (word: string, extra: Partial<LearningEntry> = {}): LearningEntry => ({
   word, meaningKo: `${word} 뜻`, meaningEn: `${word} definition`, partOfSpeech: 'noun', cefr: 'B2', ipa: '', synonyms: [`${word}-similar`],
@@ -36,5 +36,35 @@ describe('study game question generation', () => {
     expect(spelling.task).toBe('spelling')
     expect(isObjectiveAnswerCorrect(spelling, `  ${spelling.answer.toUpperCase()} `)).toBe(true)
     expect(isObjectiveAnswerCorrect({ ...spelling, task: 'meaning' }, spelling.answer)).toBeNull()
+  })
+
+  it('keeps only missed words until the current mastery cycle reaches zero', () => {
+    const initial = createMasteryProgress(entries.slice(0, 3), () => 0.9)
+    const first = advanceMasteryProgress(initial, false, entries.slice(0, 3).map((item) => item.word), () => 0.9).progress
+    const second = advanceMasteryProgress(first, true, entries.slice(0, 3).map((item) => item.word), () => 0.9).progress
+    const retry = advanceMasteryProgress(second, true, entries.slice(0, 3).map((item) => item.word), () => 0.9)
+    expect(retry.progress.queue).toHaveLength(1)
+    expect(retry.progress.retryRound).toBe(2)
+    const cleared = advanceMasteryProgress(retry.progress, true, entries.slice(0, 3).map((item) => item.word), () => 0.9)
+    expect(cleared.progress.cycle).toBe(2)
+    expect(cleared.progress.queue).toHaveLength(3)
+  })
+
+  it('advances through every mastery stage and completes after the minimum 11 recalls per word', () => {
+    const cohort = entries.slice(0, 2)
+    let progress = createMasteryProgress(cohort, () => 0.5)
+    while (!progress.complete) progress = advanceMasteryProgress(progress, true, cohort.map((item) => item.word), () => 0.5).progress
+    expect(progress.stageIndex).toBe(MASTERY_STAGES.length - 1)
+    expect(progress.totalAttempts).toBe(masteryMinimumAttempts(cohort.length))
+    expect(masteryMinimumAttempts(100)).toBe(1100)
+  })
+
+  it('builds cloze and synonym choices from the cohort', () => {
+    const cloze = buildMasteryOptions(entries[0], entries, 'cloze-choice', () => 0.4)
+    const synonym = buildMasteryOptions(entries[0], entries, 'synonym-choice', () => 0.4)
+    expect(cloze.options).toContain(entries[0].word)
+    expect(cloze.options).toHaveLength(4)
+    expect(synonym.options).toContain(entries[0].synonyms[0])
+    expect(maskMasterySentence(entries[0])).toContain('_____')
   })
 })
