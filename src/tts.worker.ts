@@ -4,7 +4,8 @@ import { env } from '@huggingface/transformers'
 import { KokoroTTS, TextSplitterStream } from 'kokoro-js'
 
 type SpeechPart = { text: string; voice: string }
-type InitMessage = { type: 'init'; requestId: string; wasmBaseUrl: string }
+type BrowserBackend = 'webgpu' | 'wasm'
+type InitMessage = { type: 'init'; requestId: string; wasmBaseUrl: string; backend: BrowserBackend }
 type GenerateMessage = { type: 'generate'; requestId: string; parts: SpeechPart[] }
 type CancelMessage = { type: 'cancel'; requestId: string }
 type IncomingMessage = InitMessage | GenerateMessage | CancelMessage
@@ -14,6 +15,7 @@ type KokoroVoice = NonNullable<Parameters<KokoroModel['stream']>[1]>['voice']
 
 const workerScope: DedicatedWorkerGlobalScope = self as unknown as DedicatedWorkerGlobalScope
 let modelPromise: Promise<KokoroModel> | null = null
+let modelBackend: BrowserBackend | null = null
 let configuredWasmBaseUrl = ''
 let generationQueue = Promise.resolve()
 const cancelledRequests = new Set<string>()
@@ -35,23 +37,35 @@ function configureRuntime(wasmBaseUrl: string) {
   }
 }
 
-function ensureModel(requestId: string, wasmBaseUrl = configuredWasmBaseUrl) {
+function loadModel(requestId: string, backend: BrowserBackend) {
+  return KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
+    dtype: backend === 'webgpu' ? 'fp16' : 'q8',
+    device: backend,
+    progress_callback: (progress: { status?: string; progress?: number; loaded?: number; total?: number; file?: string }) => {
+      if (progress.status !== 'progress' || !Number.isFinite(progress.progress)) return
+      post('progress', requestId, {
+        percent: Math.max(0, Math.min(100, Math.round(progress.progress || 0))),
+        loadedBytes: progress.loaded,
+        totalBytes: progress.total,
+        file: progress.file?.split('/').pop(),
+        backend,
+      })
+    },
+  })
+}
+
+function ensureModel(requestId: string, wasmBaseUrl = configuredWasmBaseUrl, preferredBackend: BrowserBackend = modelBackend || 'wasm') {
   configureRuntime(wasmBaseUrl)
   if (!modelPromise) {
-    modelPromise = KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
-      dtype: 'q8',
-      device: 'wasm',
-      progress_callback: (progress: { status?: string; progress?: number; loaded?: number; total?: number; file?: string }) => {
-        if (progress.status !== 'progress' || !Number.isFinite(progress.progress)) return
-        post('progress', requestId, {
-          percent: Math.max(0, Math.min(100, Math.round(progress.progress || 0))),
-          loadedBytes: progress.loaded,
-          totalBytes: progress.total,
-          file: progress.file?.split('/').pop(),
-        })
-      },
-    }).catch((error) => {
+    modelBackend = preferredBackend
+    modelPromise = loadModel(requestId, preferredBackend).catch(async (error) => {
+      if (preferredBackend === 'webgpu') {
+        post('backend-fallback', requestId, { message: error instanceof Error ? error.message : String(error), backend: 'wasm' })
+        modelBackend = 'wasm'
+        return loadModel(requestId, 'wasm')
+      }
       modelPromise = null
+      modelBackend = null
       throw error
     })
   }
@@ -60,8 +74,8 @@ function ensureModel(requestId: string, wasmBaseUrl = configuredWasmBaseUrl) {
 
 async function initialize(message: InitMessage) {
   try {
-    await ensureModel(message.requestId, message.wasmBaseUrl)
-    post('ready', message.requestId)
+    await ensureModel(message.requestId, message.wasmBaseUrl, message.backend)
+    post('ready', message.requestId, { backend: modelBackend })
   } catch (error) {
     post('error', message.requestId, { message: error instanceof Error ? error.message : 'Kokoro Worker를 시작하지 못했습니다.' })
   }
@@ -86,7 +100,7 @@ async function generate(message: GenerateMessage) {
       }
     }
     if (cancelledRequests.has(message.requestId)) post('cancelled', message.requestId)
-    else post('done', message.requestId, { chunks: chunkIndex })
+    else post('done', message.requestId, { chunks: chunkIndex, backend: modelBackend })
   } catch (error) {
     post('error', message.requestId, { message: error instanceof Error ? error.message : '음성을 생성하지 못했습니다.' })
   } finally {

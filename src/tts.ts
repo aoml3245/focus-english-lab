@@ -15,6 +15,7 @@ export type VoiceProfile = {
 
 export type TTSPreparationResult = {
   engine: 'kokoro' | 'system'
+  backend?: 'server' | 'webgpu' | 'wasm'
   fallback: boolean
   voices: number
   clips: number
@@ -27,7 +28,10 @@ export type TTSProgressDetail = {
   totalBytes?: number
   file?: string
   cached?: boolean
+  backend?: 'webgpu' | 'wasm'
 }
+
+export type TTSBackendPreference = 'auto' | 'webgpu' | 'wasm'
 
 export const VOICE_PROFILES: VoiceProfile[] = [
   { id: 'toefl-balanced', name: 'TOEFL 균형형', shortLabel: 'AI · 미국식 혼합', description: '대화에서는 여성·남성 화자를 자동으로 나누고, 강의에서는 자연스러운 미국식 음성을 사용합니다.', accent: '미국식 · 여성/남성', primary: 'af_heart', secondary: 'am_michael', recommended: true },
@@ -40,6 +44,7 @@ export const VOICE_PROFILES: VoiceProfile[] = [
 
 const PROFILE_BY_ID = new Map(VOICE_PROFILES.map((profile) => [profile.id, profile]))
 const STORAGE_KEY = 'focus-english-lab:voice-profile:v1'
+const BACKEND_STORAGE_KEY = 'focus-english-lab:tts-backend:v1'
 const DEFAULT_PROFILE: VoiceProfileId = 'toefl-balanced'
 const SPEAKER_RE = /(?:^|\s)([A-Z][A-Za-z ]{0,24}):\s*/g
 
@@ -69,9 +74,37 @@ const browserKokoroProgressHandlers = new Set<ProgressHandler>()
 let lastBrowserKokoroProgress: { message: string; detail: TTSProgressDetail } | null = null
 const workerRequests = new Map<string, WorkerRequest>()
 let workerRequestSequence = 0
+let activeBrowserBackend: 'webgpu' | 'wasm' | null = null
 
 export function hasLocalTtsServer() {
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+}
+
+export function browserSupportsWebGPU() {
+  return typeof navigator !== 'undefined' && 'gpu' in navigator && window.isSecureContext
+}
+
+export function loadTTSBackendPreference(): TTSBackendPreference {
+  try {
+    const stored = localStorage.getItem(BACKEND_STORAGE_KEY)
+    return stored === 'webgpu' || stored === 'wasm' ? stored : 'auto'
+  } catch { return 'auto' }
+}
+
+export function resolveTTSBackend(preference = loadTTSBackendPreference()): 'webgpu' | 'wasm' {
+  return preference !== 'wasm' && browserSupportsWebGPU() ? 'webgpu' : 'wasm'
+}
+
+export function saveTTSBackendPreference(preference: TTSBackendPreference) {
+  try { localStorage.setItem(BACKEND_STORAGE_KEY, preference) } catch { /* Storage may be disabled. */ }
+  stopAllTTS()
+  if (browserKokoroWorker) failWorker(new DOMException('TTS backend changed', 'AbortError'))
+  activeBrowserBackend = null
+  lastBrowserKokoroProgress = null
+}
+
+export function getActiveBrowserTTSBackend() {
+  return activeBrowserBackend
 }
 
 export async function getBrowserKokoroCacheState(): Promise<'available' | 'missing' | 'unsupported'> {
@@ -81,7 +114,7 @@ export async function getBrowserKokoroCacheState(): Promise<'available' | 'missi
     const keys = await cache.keys()
     return keys.some((request) => {
       const url = decodeURIComponent(request.url)
-      return url.includes('Kokoro-82M-v1.0-ONNX') && /model.*(?:q8|quantized).*\.onnx/i.test(url)
+      return url.includes('Kokoro-82M-v1.0-ONNX') && /model.*(?:fp16|q8|quantized).*\.onnx/i.test(url)
     }) ? 'available' : 'missing'
   } catch { return 'unsupported' }
 }
@@ -118,8 +151,15 @@ function stopPlayback() {
   if ('speechSynthesis' in window) window.speechSynthesis.cancel()
 }
 
+function terminateActiveBrowserWork() {
+  if (!browserKokoroWorker || workerRequests.size === 0) return
+  failWorker(new DOMException('Audio request cancelled', 'AbortError'))
+  lastBrowserKokoroProgress = null
+}
+
 export function stopTTS() {
   stopPlayback()
+  terminateActiveBrowserWork()
 }
 
 export function stopAllTTS() {
@@ -127,6 +167,7 @@ export function stopAllTTS() {
   examPrecacheGeneration += 1
   examPrecacheController?.abort()
   examPrecacheController = null
+  terminateActiveBrowserWork()
 }
 
 function splitSpeakers(text: string) {
@@ -170,7 +211,8 @@ async function loadBrowserKokoro(onProgress: ProgressHandler, signal?: AbortSign
   browserKokoroProgressHandlers.add(onProgress)
   try {
     if (!browserKokoroPromise) {
-      reportBrowserKokoroProgress('브라우저에 저장된 Kokoro 82M이 있는지 확인합니다…', { phase: 'checking', percent: 0 })
+      const requestedBackend = resolveTTSBackend()
+      reportBrowserKokoroProgress(`${requestedBackend === 'webgpu' ? 'WebGPU(Metal)' : 'WASM'}용 Kokoro 82M을 확인합니다…`, { phase: 'checking', percent: 0, backend: requestedBackend })
       browserKokoroPromise = (async () => {
         const cachedBeforeLoad = await getBrowserKokoroCacheState() === 'available'
         reportBrowserKokoroProgress(cachedBeforeLoad ? '저장된 Kokoro 82M을 브라우저 캐시에서 읽습니다…' : 'Kokoro 82M을 처음 다운로드합니다…', { phase: cachedBeforeLoad ? 'loading-cache' : 'downloading', percent: 0, cached: cachedBeforeLoad })
@@ -181,10 +223,12 @@ async function loadBrowserKokoro(onProgress: ProgressHandler, signal?: AbortSign
           worker.postMessage({
             type: 'init',
             requestId,
+            backend: requestedBackend,
             wasmBaseUrl: new URL(`${import.meta.env.BASE_URL}ort/`, window.location.origin).href,
           })
         })
-        reportBrowserKokoroProgress('Kokoro 82M Worker 초기화를 마쳤습니다. 이제 음성을 생성할 수 있습니다.', { phase: 'ready', percent: 100, cached: true })
+        const backend = activeBrowserBackend || requestedBackend
+        reportBrowserKokoroProgress(`Kokoro 82M ${backend === 'webgpu' ? 'WebGPU(Metal)' : 'WASM'} 초기화를 마쳤습니다.`, { phase: 'ready', percent: 100, cached: true, backend })
       })().catch((error) => {
         browserKokoroPromise = null
         lastBrowserKokoroProgress = null
@@ -202,18 +246,24 @@ function failWorker(error: Error) {
   browserKokoroWorker?.terminate()
   browserKokoroWorker = null
   browserKokoroPromise = null
+  activeBrowserBackend = null
 }
 
 function getBrowserKokoroWorker() {
   if (browserKokoroWorker) return browserKokoroWorker
   const worker = new Worker(new URL('./tts.worker.ts', import.meta.url), { type: 'module', name: 'focus-english-kokoro' })
-  worker.onmessage = (event: MessageEvent<{ type: string; requestId: string; blob?: Blob; index?: number; message?: string; percent?: number; loadedBytes?: number; totalBytes?: number; file?: string }>) => {
+  worker.onmessage = (event: MessageEvent<{ type: string; requestId: string; blob?: Blob; index?: number; message?: string; percent?: number; loadedBytes?: number; totalBytes?: number; file?: string; backend?: 'webgpu' | 'wasm' }>) => {
     const message = event.data
     const request = workerRequests.get(message.requestId)
     if (message.type === 'progress') {
       const cached = lastBrowserKokoroProgress?.detail.cached === true
       const phase = cached ? 'loading-cache' : 'downloading'
-      reportBrowserKokoroProgress(`${cached ? '브라우저 캐시 읽는 중' : 'Kokoro 82M 다운로드 중'}… ${message.percent ?? 0}%`, { phase, percent: message.percent, loadedBytes: message.loadedBytes, totalBytes: message.totalBytes, file: message.file, cached })
+      reportBrowserKokoroProgress(`${message.backend === 'webgpu' ? 'WebGPU(Metal)' : 'WASM'} ${cached ? '캐시 읽는 중' : '모델 다운로드 중'}… ${message.percent ?? 0}%`, { phase, percent: message.percent, loadedBytes: message.loadedBytes, totalBytes: message.totalBytes, file: message.file, cached, backend: message.backend })
+      return
+    }
+    if (message.type === 'backend-fallback') {
+      activeBrowserBackend = 'wasm'
+      reportBrowserKokoroProgress('WebGPU 초기화에 실패해 q8 WASM 호환 모드로 전환합니다…', { phase: 'initializing', percent: 0, backend: 'wasm' })
       return
     }
     if (!request) return
@@ -224,7 +274,10 @@ function getBrowserKokoroWorker() {
     }
     workerRequests.delete(message.requestId)
     request.abort?.()
-    if (message.type === 'ready' || message.type === 'done') request.resolve(request.chunks)
+    if (message.type === 'ready' || message.type === 'done') {
+      if (message.backend) activeBrowserBackend = message.backend
+      request.resolve(request.chunks)
+    }
     else if (message.type === 'cancelled') request.reject(new DOMException('Audio request cancelled', 'AbortError'))
     else request.reject(new Error(message.message || 'Kokoro Worker에서 음성을 만들지 못했습니다.'))
   }
@@ -246,7 +299,7 @@ async function generateBrowserSpeech(parts: BrowserSpeechPart[], onProgress: Pro
       resolve,
       reject,
       onChunk: (blob, index) => {
-        onProgress(`브라우저 AI 음성 스트리밍 중… ${index + 1}`, { phase: 'generating', cached: true })
+        onProgress(`${activeBrowserBackend === 'webgpu' ? 'WebGPU(Metal)' : 'WASM'} 음성 스트리밍 중… ${index + 1}`, { phase: 'generating', cached: true, backend: activeBrowserBackend || undefined })
         onChunk?.(blob, index)
       },
       abort: () => signal.removeEventListener('abort', abort),
@@ -331,7 +384,7 @@ export async function prepareTTS(profileId: VoiceProfileId, onProgress: Progress
   if (!hasLocalTtsServer()) {
     await loadBrowserKokoro(onProgress, signal)
     const voices = new Set([profile.primary, profile.secondary].filter(Boolean)).size
-    return { engine: 'kokoro', fallback: false, voices, clips: 0 }
+    return { engine: 'kokoro', backend: activeBrowserBackend || resolveTTSBackend(), fallback: false, voices, clips: 0 }
   }
   onProgress('로컬 음성 서버를 확인하고 있습니다…')
   const response = await fetch('/api/tts/status', { signal })
@@ -340,7 +393,7 @@ export async function prepareTTS(profileId: VoiceProfileId, onProgress: Progress
   if (status.state === 'error') throw new Error(status.error || '로컬 AI 음성 모델을 시작하지 못했습니다.')
   onProgress(status.state === 'ready' ? '로컬 AI 음성 서버가 준비됐습니다.' : 'AI 모델은 서버에서 백그라운드로 준비 중입니다.')
   const voices = new Set([profile.primary, profile.secondary].filter(Boolean)).size
-  return { engine: 'kokoro', fallback: false, voices, clips: 0 }
+  return { engine: 'kokoro', backend: 'server', fallback: false, voices, clips: 0 }
 }
 
 function speechKey(text: string, profile: VoiceProfile) {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowIcon, Brand } from './components'
 import { findLocalModels, loadLocalLlmConfig, saveLocalLlmConfig, type LocalLlmConfig } from './learning'
-import { getVoiceProfile, hasLocalTtsServer } from './tts'
+import { browserSupportsWebGPU, getVoiceProfile, hasLocalTtsServer, resolveTTSBackend } from './tts'
 import { clearTtsAudioCache, getTtsAudioCacheStats, TTS_AUDIO_CACHE_MAX_BYTES, TTS_AUDIO_CACHE_MAX_ENTRIES, type TtsAudioCacheStats } from './ttsAudioCache'
 import { getCoachModelStatus, loadSelectedCoachModel, saveSelectedCoachModel, type CoachModelStatus } from './writingCoachEngine'
 import { APP_VERSION } from './version'
@@ -86,7 +86,7 @@ export default function Settings({ onBack, onVoiceSettings }: { onBack: () => vo
 
       <section className="settings-section">
         <div className="settings-section-head"><div><span>01</span><h2>음성 및 재생</h2><p>Listening·Speaking·단어장에서 사용할 기본 음성과 엔진을 관리합니다.</p></div><button className="button button--primary" onClick={onVoiceSettings}>음성 상세 설정 <ArrowIcon /></button></div>
-        <dl className="settings-summary"><div><dt>현재 음성</dt><dd>{getVoiceProfile().name}</dd></div><div><dt>실행 방식</dt><dd>{hasLocalTtsServer() ? '로컬 서버 · WAV 캐시' : '브라우저 Worker · Kokoro 82M'}</dd></div></dl>
+        <dl className="settings-summary"><div><dt>현재 음성</dt><dd>{getVoiceProfile().name}</dd></div><div><dt>실행 방식</dt><dd>{hasLocalTtsServer() ? '로컬 서버 · WAV 캐시' : resolveTTSBackend() === 'webgpu' ? 'WebGPU · Apple Metal/GPU 우선' : `WASM · CPU 호환${browserSupportsWebGPU() ? '' : ' (WebGPU 미지원)'}`}</dd></div></dl>
       </section>
 
       <section className="settings-section">

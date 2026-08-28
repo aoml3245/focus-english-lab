@@ -219,7 +219,7 @@ function Intro({ items, mode, practiceLabel, onBack, onStart }: { items: BaseIte
     prepareExamTTS(examAudioTexts, profile.id, (message, progress) => { if (active) setPreparation((current) => ({ ...current, message, progress: progress || current.progress })) })
       .then((result) => {
         if (!active) return
-        setPreparation({ phase: result.fallback ? 'fallback' : result.engine === 'system' ? 'system' : 'ready', message: result.fallback ? 'AI 엔진 대신 기기 영어 음성이 준비됐습니다.' : result.engine === 'system' ? '선택한 기기 영어 음성이 준비됐습니다. 첫 듣기 문항부터 바로 재생됩니다.' : localTts ? '로컬 AI 서버 준비 완료 · 시험 음성은 자동으로 캐시됩니다.' : '브라우저 Kokoro 82M non-JSEP Worker 준비 완료 · 문장 스트림과 제한 캐시를 사용합니다.', progress: result.engine === 'kokoro' ? { phase: 'ready', percent: 100, cached: true } : undefined })
+        setPreparation({ phase: result.fallback ? 'fallback' : result.engine === 'system' ? 'system' : 'ready', message: result.fallback ? 'AI 엔진 대신 기기 영어 음성이 준비됐습니다.' : result.engine === 'system' ? '선택한 기기 영어 음성이 준비됐습니다. 첫 듣기 문항부터 바로 재생됩니다.' : localTts ? '로컬 AI 서버 준비 완료 · 시험 음성은 자동으로 캐시됩니다.' : result.backend === 'webgpu' ? 'Kokoro 82M WebGPU(Metal) 준비 완료 · GPU에서 음성을 생성합니다.' : 'Kokoro 82M q8 WASM 준비 완료 · 호환 모드로 음성을 생성합니다.', progress: result.engine === 'kokoro' ? { phase: 'ready', percent: 100, cached: true, backend: result.backend === 'webgpu' ? 'webgpu' : result.backend === 'wasm' ? 'wasm' : undefined } : undefined })
       })
       .catch((error: unknown) => { if (active) setPreparation({ phase: 'error', message: error instanceof Error ? error.message : '음성 엔진을 준비하지 못했습니다.' }) })
     return () => { active = false; stopTTS() }
