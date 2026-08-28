@@ -5,6 +5,7 @@ import { browserSupportsWebGPU, getVoiceProfile, hasLocalTtsServer, resolveTTSBa
 import { clearTtsAudioCache, getTtsAudioCacheStats, TTS_AUDIO_CACHE_MAX_BYTES, TTS_AUDIO_CACHE_MAX_ENTRIES, type TtsAudioCacheStats } from './ttsAudioCache'
 import { getCoachModelStatus, loadSelectedCoachModel, saveSelectedCoachModel, type CoachModelStatus } from './writingCoachEngine'
 import { APP_VERSION } from './version'
+import { refreshAppToLatest } from './AppUpdate'
 
 const EMPTY_CACHE: TtsAudioCacheStats = { entries: 0, bytes: 0 }
 const formatMegabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(bytes ? 1 : 0)} MB`
@@ -20,6 +21,8 @@ export default function Settings({ onBack, onVoiceSettings, onExamData }: { onBa
   const [cache, setCache] = useState<TtsAudioCacheStats>(EMPTY_CACHE)
   const [cacheBusy, setCacheBusy] = useState(true)
   const [cacheMessage, setCacheMessage] = useState('저장된 생성 음성의 사용량을 확인하고 있습니다.')
+  const [updateBusy, setUpdateBusy] = useState(false)
+  const [updateMessage, setUpdateMessage] = useState('학습 기록·단어장·설정·Kokoro 모델은 유지하고 앱 코드만 새로 불러옵니다.')
 
   useEffect(() => {
     let active = true
@@ -79,6 +82,16 @@ export default function Settings({ onBack, onVoiceSettings, onExamData }: { onBa
     finally { setCacheBusy(false) }
   }
 
+  const forceUpdate = async () => {
+    setUpdateBusy(true)
+    try {
+      await refreshAppToLatest(setUpdateMessage)
+    } catch (error) {
+      setUpdateMessage(error instanceof Error ? error.message : '앱을 새로 불러오지 못했습니다. 네트워크를 확인해 주세요.')
+      setUpdateBusy(false)
+    }
+  }
+
   return <div className="settings-page">
     <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header>
     <main>
@@ -111,6 +124,12 @@ export default function Settings({ onBack, onVoiceSettings, onExamData }: { onBa
       <section className="settings-section">
         <div className="settings-section-head"><div><span>05</span><h2>브라우저 저장공간</h2><p>생성된 음성만 제한된 용량으로 저장합니다. Kokoro 모델과 학습 기록은 이 버튼으로 지우지 않습니다.</p></div><button className="button button--secondary" onClick={clearCache} disabled={cacheBusy || cache.entries === 0}>{cacheBusy ? '확인 중…' : '생성 음성 비우기'}</button></div>
         <div className="settings-cache-meter"><div><strong>{formatMegabytes(cache.bytes)}</strong><span> / {formatMegabytes(TTS_AUDIO_CACHE_MAX_BYTES)}</span></div><div className="settings-meter" aria-label="생성 음성 캐시 사용량"><span style={{ width: `${Math.min(100, cache.bytes / TTS_AUDIO_CACHE_MAX_BYTES * 100)}%` }} /></div><small>{cache.entries} / {TTS_AUDIO_CACHE_MAX_ENTRIES}개 · {cacheMessage}</small></div>
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-section-head"><div><span>06</span><h2>앱 업데이트</h2><p>GitHub Pages의 최신 배포를 다시 확인하고, 이전 앱 파일 캐시를 우회해 새 버전으로 재시작합니다.</p></div><button className="button button--primary" onClick={() => { void forceUpdate() }} disabled={updateBusy}>{updateBusy ? '최신 버전 확인 중…' : '최신 버전 강제 적용'}</button></div>
+        <dl className="settings-summary"><div><dt>현재 실행 버전</dt><dd>{APP_VERSION}</dd></div><div><dt>보존되는 데이터</dt><dd>학습 기록 · 단어장 · 음성 모델</dd></div></dl>
+        <p className="settings-status" role="status" aria-live="polite">{updateMessage}</p>
       </section>
 
       <footer className="settings-footer"><Brand /><p>개발 중인 0.x 버전입니다. 기능 변경마다 버전을 올려 배포 상태를 구분합니다.</p><strong>Version {APP_VERSION}</strong></footer>
