@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { loadVoiceProfileId, playTTS, stopTTS } from './tts'
 
-export function Brand() { return <div className="brand"><span className="brand-mark"><i /><i /></span><span>Focus English Lab</span></div> }
+export const HOME_NAVIGATION_EVENT = 'focus-english-lab:navigate-home'
+
+export function Brand() {
+  return <button type="button" className="brand" aria-label="홈으로 이동" title="홈으로" onClick={() => window.dispatchEvent(new Event(HOME_NAVIGATION_EVENT))}><span className="brand-mark" aria-hidden="true"><i /><i /></span><span>Focus English Lab</span></button>
+}
 
 export function ArrowIcon({ direction = 'right' }: { direction?: 'left' | 'right' }) {
   return <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d={direction === 'right' ? 'm9 18 6-6-6-6' : 'm15 18-6-6 6-6'} /></svg>
@@ -37,7 +41,7 @@ export function AudioPrompt({ text, autoPlay = false, onPlaybackChange }: { text
       const result = await playTTS(text, loadVoiceProfileId(), (message) => {
         setStatus(message)
         setState(message === '재생 중…' ? 'playing' : 'loading')
-      })
+      }, { maxWaitMs: 1500 })
       if (result === 'cancelled') return
       setState('played')
       setStatus(result === 'fallback' ? '시스템 음성으로 재생했습니다.' : '한 번 재생했습니다.')
@@ -46,6 +50,13 @@ export function AudioPrompt({ text, autoPlay = false, onPlaybackChange }: { text
       setState('error')
       setStatus(error instanceof Error ? error.message : '오디오를 재생하지 못했습니다.')
     } finally { onPlaybackChange?.(false) }
+  }, [onPlaybackChange, text])
+  useEffect(() => {
+    stopTTS()
+    started.current = false
+    setState('idle')
+    setStatus('')
+    onPlaybackChange?.(false)
   }, [onPlaybackChange, text])
   useEffect(() => {
     if (!autoPlay) return undefined

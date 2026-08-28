@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { ArrowIcon, Brand } from './components'
-import { PRACTICE_ITEMS, SECTION_META } from './data'
+import { SECTION_META } from './data'
+import { getAvailablePracticeItems } from './examPack'
 import { displayAnswer, getSessionStats, isCorrect } from './review'
 import { loadHistory, setSessionRandomEligibility } from './storage'
 import type { BaseItem, SavedSession, Section } from './types'
 
-const ITEM_BY_ID = new Map(PRACTICE_ITEMS.map((item) => [item.id, item]))
+const ITEM_BY_ID = new Map(getAvailablePracticeItems().map((item) => [item.id, item]))
 
 function sessionItems(session: SavedSession) {
   return (session.itemIds || []).map((id) => ITEM_BY_ID.get(id)).filter((item): item is BaseItem => Boolean(item))

@@ -1,5 +1,3 @@
-import type { GenerateOptions } from 'kokoro-js'
-
 export type VoiceProfileId = 'toefl-balanced' | 'us-female' | 'us-male' | 'uk-female' | 'uk-male' | 'system'
 
 export type VoiceProfile = {
@@ -35,18 +33,18 @@ const DEFAULT_PROFILE: VoiceProfileId = 'toefl-balanced'
 const SPEAKER_RE = /(?:^|\s)([A-Z][A-Za-z ]{0,24}):\s*/g
 
 type ProgressHandler = (message: string) => void
-type KokoroInstance = Awaited<ReturnType<(typeof import('kokoro-js'))['KokoroTTS']['from_pretrained']>>
-
-let kokoroPromise: Promise<KokoroInstance> | null = null
+type PlayOptions = { maxWaitMs?: number }
 let activeAudio: HTMLAudioElement | null = null
 let activeUrls: string[] = []
 let playbackGeneration = 0
-let useSystemForSession = false
-const preparedVoices = new Set<string>()
-const preparationPromises = new Map<string, Promise<void>>()
 const speechCache = new Map<string, Blob[]>()
 const speechPromises = new Map<string, Promise<Blob[]>>()
 const MAX_CACHED_SPEECHES = 24
+let examPrecacheGeneration = 0
+
+export function hasLocalTtsServer() {
+  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+}
 
 export function loadVoiceProfileId(): VoiceProfileId {
   try {
@@ -111,20 +109,6 @@ function speakWithSystem(text: string, onProgress: ProgressHandler) {
   })
 }
 
-async function getKokoro(onProgress: ProgressHandler) {
-  if (!kokoroPromise) {
-    kokoroPromise = import('kokoro-js').then(({ KokoroTTS }) => KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
-      dtype: 'q8',
-      device: 'wasm',
-      progress_callback: (progress: { status?: string; progress?: number }) => {
-        const percent = typeof progress.progress === 'number' ? ` ${Math.round(progress.progress)}%` : ''
-        onProgress(`AI 음성 모델 준비 중…${percent}`)
-      },
-    })).catch((error) => { kokoroPromise = null; throw error })
-  }
-  return kokoroPromise
-}
-
 function prepareSystemVoices(onProgress: ProgressHandler) {
   return new Promise<void>((resolve, reject) => {
     if (!('speechSynthesis' in window)) { reject(new Error('이 브라우저는 음성 합성을 지원하지 않습니다.')); return }
@@ -142,40 +126,20 @@ function prepareSystemVoices(onProgress: ProgressHandler) {
   })
 }
 
-async function warmVoice(tts: KokoroInstance, voice: string, onProgress: ProgressHandler, index: number, total: number) {
-  if (preparedVoices.has(voice)) return
-  let pending = preparationPromises.get(voice)
-  if (!pending) {
-    pending = (async () => {
-      onProgress(`AI 화자 워밍업 중… ${index}/${total}`)
-      await tts.generate(index === 1 ? 'Audio is ready.' : 'The second speaker is ready.', { voice: voice as NonNullable<GenerateOptions['voice']>, speed: 1 })
-      preparedVoices.add(voice)
-    })().finally(() => preparationPromises.delete(voice))
-    preparationPromises.set(voice, pending)
-  }
-  await pending
-}
-
 export async function prepareTTS(profileId: VoiceProfileId, onProgress: ProgressHandler): Promise<TTSPreparationResult> {
   const profile = getVoiceProfile(profileId)
-  if (profile.id === 'system') {
+  if (profile.id === 'system' || !hasLocalTtsServer()) {
     await prepareSystemVoices(onProgress)
-    return { engine: 'system', fallback: false, voices: 1, clips: 0 }
+    return { engine: 'system', fallback: profile.id !== 'system', voices: 1, clips: 0 }
   }
-  try {
-    onProgress('AI 음성 엔진을 시작하고 있습니다…')
-    const tts = await getKokoro(onProgress)
-    const voices = [...new Set([profile.primary, profile.secondary].filter((voice): voice is string => Boolean(voice)))]
-    for (let index = 0; index < voices.length; index += 1) await warmVoice(tts, voices[index], onProgress, index + 1, voices.length)
-    useSystemForSession = false
-    onProgress('AI 음성 엔진과 화자 준비가 끝났습니다.')
-    return { engine: 'kokoro', fallback: false, voices: voices.length, clips: 0 }
-  } catch {
-    useSystemForSession = true
-    onProgress('AI 음성을 사용할 수 없어 기기 음성을 준비합니다…')
-    await prepareSystemVoices(onProgress)
-    return { engine: 'system', fallback: true, voices: 1, clips: 0 }
-  }
+  onProgress('로컬 음성 서버를 확인하고 있습니다…')
+  const response = await fetch('/api/tts/status')
+  if (!response.ok) throw new Error('로컬 음성 서버에 연결하지 못했습니다.')
+  const status = await response.json() as { state: 'idle' | 'loading' | 'ready' | 'error'; error?: string }
+  if (status.state === 'error') throw new Error(status.error || '로컬 AI 음성 모델을 시작하지 못했습니다.')
+  onProgress(status.state === 'ready' ? '로컬 AI 음성 서버가 준비됐습니다.' : 'AI 모델은 서버에서 백그라운드로 준비 중입니다.')
+  const voices = new Set([profile.primary, profile.secondary].filter(Boolean)).size
+  return { engine: 'kokoro', fallback: false, voices, clips: 0 }
 }
 
 function speechKey(text: string, profile: VoiceProfile) {
@@ -183,15 +147,18 @@ function speechKey(text: string, profile: VoiceProfile) {
 }
 
 async function synthesizeSpeech(text: string, profile: VoiceProfile, onProgress: ProgressHandler) {
-  const tts = await getKokoro(onProgress)
   const parts = splitSpeakers(text)
   const blobs: Blob[] = []
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index]
-    onProgress(`자연스러운 음성 생성 중… ${index + 1}/${parts.length}`)
+    onProgress(`서버 음성 불러오는 중… ${index + 1}/${parts.length}`)
     const voice = part.speaker % 2 === 1 && profile.secondary ? profile.secondary : profile.primary!
-    const rawAudio = await tts.generate(part.text, { voice: voice as NonNullable<GenerateOptions['voice']>, speed: 1 })
-    blobs.push(rawAudio.toBlob())
+    const response = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: part.text, voice, speed: 1 }) })
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({})) as { error?: string }
+      throw new Error(payload.error || '로컬 음성 서버에서 음성을 만들지 못했습니다.')
+    }
+    blobs.push(await response.blob())
   }
   return blobs
 }
@@ -221,10 +188,13 @@ export async function prepareExamTTS(texts: string[], profileId: VoiceProfileId,
   if (result.engine !== 'kokoro') return result
   const profile = getVoiceProfile(profileId)
   const uniqueTexts = [...new Set(texts.filter(Boolean))]
-  for (let index = 0; index < uniqueTexts.length; index += 1) {
-    onProgress(`시험 음성 미리 생성 중… ${index + 1}/${uniqueTexts.length}`)
-    await getSpeech(uniqueTexts[index], profile, onProgress)
-  }
+  const generation = ++examPrecacheGeneration
+  void (async () => {
+    for (let index = 0; index < uniqueTexts.length; index += 1) {
+      if (generation !== examPrecacheGeneration) return
+      await getSpeech(uniqueTexts[index], profile, () => undefined)
+    }
+  })().catch(() => undefined)
   return { ...result, clips: uniqueTexts.length }
 }
 
@@ -239,9 +209,13 @@ function playElement(audio: HTMLAudioElement, generation: number, onProgress: Pr
   })
 }
 
-async function speakWithKokoro(text: string, profile: VoiceProfile, onProgress: ProgressHandler) {
+async function speakWithKokoro(text: string, profile: VoiceProfile, onProgress: ProgressHandler, maxWaitMs?: number) {
   const generation = playbackGeneration
-  const blobs = await getSpeech(text, profile, onProgress)
+  const speech = getSpeech(text, profile, onProgress)
+  const blobs = maxWaitMs
+    ? await Promise.race<Blob[] | null>([speech, new Promise<null>((resolve) => window.setTimeout(() => resolve(null), maxWaitMs))])
+    : await speech
+  if (!blobs) return false
   if (generation !== playbackGeneration) return
   const clips: HTMLAudioElement[] = []
   for (const blob of blobs) {
@@ -251,17 +225,29 @@ async function speakWithKokoro(text: string, profile: VoiceProfile, onProgress: 
   }
   for (const clip of clips) await playElement(clip, generation, onProgress)
   releaseAudio()
+  return true
 }
 
-export async function playTTS(text: string, profileId: VoiceProfileId, onProgress: ProgressHandler) {
+export async function playTTS(text: string, profileId: VoiceProfileId, onProgress: ProgressHandler, options: PlayOptions = {}) {
   stopTTS()
   const profile = getVoiceProfile(profileId)
   const generation = playbackGeneration
   try {
-    if (profile.id === 'system' || useSystemForSession) await speakWithSystem(text, onProgress)
-    else await speakWithKokoro(text, profile, onProgress)
+    if (profile.id === 'system' || !hasLocalTtsServer()) {
+      if (profile.id !== 'system') onProgress('웹 버전에서는 기기 영어 음성으로 재생합니다…')
+      await speakWithSystem(text, onProgress)
+      if (profile.id !== 'system') return 'fallback'
+    }
+    else {
+      const played = await speakWithKokoro(text, profile, onProgress, options.maxWaitMs)
+      if (played === false) {
+        onProgress('AI 음성은 서버에서 계속 준비합니다. 이번에는 기기 음성으로 바로 재생합니다…')
+        await speakWithSystem(text, onProgress)
+        return 'fallback'
+      }
+    }
     if (generation !== playbackGeneration) return 'cancelled'
-    return useSystemForSession && profile.id !== 'system' ? 'fallback' : 'completed'
+    return 'completed'
   } catch (error) {
     if (generation !== playbackGeneration) return 'cancelled'
     if (profile.id !== 'system') {

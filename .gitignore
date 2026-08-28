@@ -11,3 +11,4 @@ scripts/data/
 *.log
 .vite/
 coverage/
+.cache/

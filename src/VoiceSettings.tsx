@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { ArrowIcon, Brand } from './components'
-import { getVoiceProfile, loadVoiceProfileId, playTTS, saveVoiceProfileId, stopTTS, VOICE_PROFILES, type VoiceProfileId } from './tts'
+import { getVoiceProfile, hasLocalTtsServer, loadVoiceProfileId, playTTS, saveVoiceProfileId, stopTTS, VOICE_PROFILES, type VoiceProfileId } from './tts'
 
 const PREVIEW_TEXT = 'Student: I am trying to understand the new research schedule. Advisor: Let us review the evidence together before you make a decision.'
 
 export default function VoiceSettings({ onBack }: { onBack: () => void }) {
+  const localTts = hasLocalTtsServer()
   const [selected, setSelected] = useState<VoiceProfileId>(loadVoiceProfileId)
   const [previewing, setPreviewing] = useState<VoiceProfileId | null>(null)
   const [status, setStatus] = useState('음성을 선택한 뒤 미리 듣기로 비교해 보세요.')
@@ -30,7 +31,7 @@ export default function VoiceSettings({ onBack }: { onBack: () => void }) {
     <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header>
     <main>
       <div className="voice-hero"><div><h1>듣기 음성을 골라보세요.</h1><p>실제 학습 환경처럼 자연스러운 AI 음성과 여러 억양을 비교하고, Listening·Speaking에서 사용할 기본 음성을 정할 수 있습니다.</p></div><div className="voice-current"><span>현재 기본 음성</span><strong>{getVoiceProfile(selected).name}</strong><small>{getVoiceProfile(selected).accent}</small></div></div>
-      <div className="voice-notice"><strong>Kokoro 82M · 브라우저에서 직접 실행</strong><p>AI 음성은 문장을 외부 음성 API로 전송하지 않습니다. 처음 사용할 때 약 90MB 모델을 한 번 내려받아 브라우저 캐시에 저장하므로 미리 듣기 시작까지 시간이 걸릴 수 있습니다.</p></div>
+      <div className="voice-notice"><strong>{localTts ? 'Kokoro 82M · 로컬 서버 실행 및 WAV 캐시' : '웹 버전 · 기기 내장 영어 음성'}</strong><p>{localTts ? '문장은 외부 음성 API로 전송되지 않습니다. 로컬 서버가 모델을 한 번만 실행하고 생성한 음성을 디스크에 저장하므로, 같은 문장과 화자는 다음부터 즉시 재생됩니다.' : 'GitHub Pages에서는 서버 프로그램을 실행할 수 없어 휴대폰이나 컴퓨터에 내장된 영어 음성을 사용합니다. 텍스트는 외부 음성 API로 전송되지 않습니다.'}</p></div>
       <section className="voice-list" aria-label="사용할 음성 선택">
         {VOICE_PROFILES.map((profile) => <article className={selected === profile.id ? 'voice-row voice-row--selected' : 'voice-row'} key={profile.id}>
           <div className="voice-radio" aria-hidden="true"><span /></div>

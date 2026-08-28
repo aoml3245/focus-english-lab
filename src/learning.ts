@@ -29,7 +29,7 @@ const DEFAULT_CONFIG: LocalLlmConfig = { endpoint: 'http://127.0.0.1:11434', mod
 let vocabularyRequest: Promise<LearningEntry[]> | null = null
 
 export function requestVocabulary() {
-  vocabularyRequest ||= fetch('/vocabulary.json').then((response) => {
+  vocabularyRequest ||= fetch(`${import.meta.env.BASE_URL}vocabulary.json`).then((response) => {
     if (!response.ok) throw new Error('단어장 데이터를 불러오지 못했습니다.')
     return response.json() as Promise<LearningEntry[]>
   })

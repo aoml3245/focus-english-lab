@@ -9,7 +9,23 @@ npm install
 npm run dev
 ```
 
+개발 서버를 켜면 Kokoro 모델도 서버에서 한 번만 준비됩니다. 생성된 WAV는 `.cache/tts/`에 저장되며 같은 문장과 화자는 다시 합성하지 않습니다. 첫 모델 다운로드와 첫 문장 생성은 백그라운드에서 진행되어 시험 시작을 차단하지 않습니다.
+
+이 작업 폴더에는 모델이 `.cache/models/`에 미리 준비되어 있어 평소 실행 중에는 다운로드하지 않습니다. 모델 캐시를 직접 지운 경우에만 `npm run tts:download`를 한 번 실행하세요.
+
 브라우저에서 표시되는 로컬 주소를 여세요. Speaking 연습은 마이크 권한이 필요합니다.
+
+## 웹 버전과 휴대용 시험 데이터
+
+GitHub Pages 배포 설정이 `.github/workflows/pages.yml`에 포함되어 있습니다. 저장소의 **Settings → Pages → Source**를 **GitHub Actions**로 한 번 지정하면 `main` 브랜치가 갱신될 때 `https://aoml3245.github.io/focus-english-lab/`에 자동 배포됩니다.
+
+홈의 **시험 데이터** 화면에서는 다음 작업을 할 수 있습니다.
+
+- 현재 또는 기본 1,000문항을 `.felpack.json`으로 내려받기
+- 휴대폰·태블릿·다른 컴퓨터에서 같은 파일을 선택해 문제은행으로 사용하기
+- 가져온 파일을 해제하고 기본 문제은행으로 복원하기
+
+파일은 브라우저 안에서만 읽고 외부 서버에 업로드하지 않습니다. GitHub Pages는 정적 호스팅이므로 웹 버전의 Listening·Speaking은 기기에 내장된 영어 음성을 사용합니다. Kokoro TTS와 Ollama Writing/Reading 보조 기능은 로컬 실행에서만 사용할 수 있습니다. 학습 기록과 내가 만든 단어장은 시험 데이터에 포함되지 않으며 현재 기기의 브라우저 저장소에 남습니다.
 
 ## 포함된 기능
 
