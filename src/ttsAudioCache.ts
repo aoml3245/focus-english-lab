@@ -5,6 +5,8 @@ const DB_VERSION = 1
 export const TTS_AUDIO_CACHE_MAX_BYTES = 64 * 1024 * 1024
 export const TTS_AUDIO_CACHE_MAX_ENTRIES = 200
 
+export type TtsAudioCacheStats = { entries: number; bytes: number }
+
 type StoredSpeech = {
   key: string
   blobs: Blob[]
@@ -97,4 +99,25 @@ export async function cacheSpeech(key: string, blobs: Blob[]) {
   } catch {
     // Storage pressure or private browsing must never block playback.
   }
+}
+
+export async function getTtsAudioCacheStats(): Promise<TtsAudioCacheStats> {
+  try {
+    const database = await openDatabase()
+    if (!database) return { entries: 0, bytes: 0 }
+    const transaction = database.transaction(STORE_NAME, 'readonly')
+    const done = transactionDone(transaction)
+    const entries = await requestResult(transaction.objectStore(STORE_NAME).getAll()) as StoredSpeech[]
+    await done
+    return { entries: entries.length, bytes: entries.reduce((total, entry) => total + entry.size, 0) }
+  } catch { return { entries: 0, bytes: 0 } }
+}
+
+export async function clearTtsAudioCache() {
+  const database = await openDatabase()
+  if (!database) return
+  const transaction = database.transaction(STORE_NAME, 'readwrite')
+  const done = transactionDone(transaction)
+  transaction.objectStore(STORE_NAME).clear()
+  await done
 }

@@ -83,6 +83,14 @@ export function loadLocalLlmConfig(): LocalLlmConfig {
   return DEFAULT_CONFIG
 }
 
+export function saveLocalLlmConfig(config: LocalLlmConfig) {
+  const endpoint = config.endpoint.trim().replace(/\/$/, '')
+  const model = config.model.trim()
+  if (!endpoint || !model) throw new Error('서버 주소와 모델 이름을 모두 입력해 주세요.')
+  try { localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify({ endpoint, model })) } catch { throw new Error('브라우저에 설정을 저장하지 못했습니다.') }
+  return { endpoint, model }
+}
+
 export async function findLocalModels(config = loadLocalLlmConfig()) {
   const response = await fetch(`${config.endpoint.replace(/\/$/, '')}/api/tags`, { signal: AbortSignal.timeout(2500) })
   if (!response.ok) throw new Error('로컬 LLM 서버에 연결할 수 없습니다.')

@@ -67,6 +67,10 @@ function loadSelectedModel() {
   try { return JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null')?.model || RECOMMENDED } catch { return RECOMMENDED }
 }
 
+export function loadSelectedCoachModel() {
+  return loadSelectedModel()
+}
+
 export function saveSelectedCoachModel(model: string) {
   try { localStorage.setItem(CONFIG_KEY, JSON.stringify({ model })) } catch { /* storage can be disabled */ }
 }

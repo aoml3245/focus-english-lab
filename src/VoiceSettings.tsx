@@ -50,7 +50,7 @@ export default function VoiceSettings({ onBack }: { onBack: () => void }) {
   }
 
   return <div className="voice-page">
-    <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header>
+    <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 설정으로</button></header>
     <main>
       <div className="voice-hero"><div><h1>듣기 음성을 골라보세요.</h1><p>실제 학습 환경처럼 자연스러운 AI 음성과 여러 억양을 비교하고, Listening·Speaking에서 사용할 기본 음성을 정할 수 있습니다.</p></div><div className="voice-current"><span>현재 기본 음성</span><strong>{getVoiceProfile(selected).name}</strong><small>{getVoiceProfile(selected).accent}</small></div></div>
       <div className="voice-notice"><strong>{localTts ? 'Kokoro 82M · 로컬 서버 실행 및 WAV 캐시' : 'Kokoro 82M · iOS 대응 non-JSEP Worker'}</strong><p>{localTts ? '문장은 외부 음성 API로 전송되지 않습니다. 로컬 서버가 모델을 한 번만 실행하고 생성한 음성을 디스크에 저장하므로, 같은 문장과 화자는 다음부터 즉시 재생됩니다.' : 'AI 음성을 처음 재생할 때 q8 모델(약 90MB급)을 한 번 내려받습니다. 추론은 화면과 분리된 Worker에서 실행되고 문장 조각이 완성되는 순서대로 재생됩니다. 생성 음성은 이 브라우저에 최대 64MB 또는 200개까지만 보관합니다.'}</p></div>
