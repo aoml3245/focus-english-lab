@@ -33,6 +33,15 @@ The repository does not redistribute Kokoro model weights. They are fetched from
 
 Kokoro uses the Apache-2.0 `phonemizer` 1.2.1 package for eSpeak-NG phoneme conversion. The build replaces one bundled `ReadableStream` async-iterator loop with the standards-compatible `getReader()` API to avoid an iOS WebKit initialization stall; the package's license and attribution are unchanged. GitHub Pages also includes the MIT-licensed `coi-serviceworker` 0.1.7 script so supported browsers can enable `SharedArrayBuffer` and parallel ONNX WASM without a custom server.
 
+## Local language models used for vocabulary review
+
+- Gemma 3 4B: https://ollama.com/library/gemma3:4b — Gemma Terms of Use; selects useful common senses from the WordNet candidate pool.
+- TranslateGemma 4B: https://ollama.com/library/translategemma — Gemma Terms of Use; drafts concise Korean glosses only for selected definitions.
+- Qwen 3.5 9B: https://ollama.com/library/qwen3.5:9b — Apache License 2.0; independently edits translations and rejects unsuitable senses.
+- Gemma 3 12B: https://ollama.com/library/gemma3:12b — Gemma Terms of Use; checks the contextual primary meaning for problem-derived examples.
+
+Model weights and Ollama caches are local-only and are not committed or redistributed. The checked-in vocabulary artifact contains reviewed text output, WordNet identifiers, and the documented source-derived fields; it does not contain model weights.
+
 ## JavaScript packages
 
 React, React DOM, Vite, Vitest, ONNX Runtime Web and `coi-serviceworker` are MIT-licensed. `kokoro-js`, `phonemizer` and the Transformers runtime are Apache-2.0 licensed. Exact package versions and transitive dependencies are recorded in `package-lock.json`; installed package contents retain their own licenses and are not checked into this repository.

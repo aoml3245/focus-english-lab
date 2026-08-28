@@ -33,7 +33,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
         const base = merged.get(personal.word)
         merged.set(personal.word, { ...base, ...personal, frequency: base?.frequency || personal.frequency, topics: [...new Set([...(personal.topics || []), ...(base?.topics || [])])] })
       }
-      setVocabulary([...merged.values()].map((entry) => ({ ...entry, searchText: [entry.word, entry.meaningKo, entry.meaningEn, ...entry.synonyms, ...entry.topics].join(' ').toLowerCase() })))
+      setVocabulary([...merged.values()].map((entry) => ({ ...entry, searchText: [entry.word, entry.meaningKo, entry.meaningEn, ...entry.synonyms, ...entry.topics, ...(entry.meanings || []).flatMap((sense) => [sense.meaningKo, sense.meaningEn, ...sense.synonyms])].join(' ').toLowerCase() })))
     }).catch((error: unknown) => { if (active) setLoadError(error instanceof Error ? error.message : '단어장 데이터를 불러오지 못했습니다.') })
     return () => { active = false }
   }, [])
@@ -152,10 +152,10 @@ function VocabularyAudioButton({ label, accessibleLabel, state, onClick }: { lab
 function VocabularyCard({ entry, saved, audio, onPlay, onToggle }: { entry: LearningEntry; saved: boolean; audio: VocabularyAudioState | null; onPlay: (key: string, text: string) => void; onToggle: () => void }) {
   const wordKey = `${entry.word}:word`
   const exampleKey = `${entry.word}:example`
+  const meanings = entry.meanings?.length ? entry.meanings : [{ senseId: `${entry.word}:primary`, meaningKo: entry.meaningKo, meaningEn: entry.meaningEn, partOfSpeech: entry.partOfSpeech, synonyms: entry.synonyms }]
   return <article className="vocab-card">
     <div className="vocab-word"><div className="vocab-term"><h2>{entry.word}</h2>{entry.ipa && <span>{entry.ipa}</span>}<VocabularyAudioButton label="단어 듣기" accessibleLabel={entry.word} state={audio?.key === wordKey ? audio : null} onClick={() => onPlay(wordKey, entry.word)} /></div><div><span>{entry.partOfSpeech}</span><span>{entry.cefr}</span>{entry.academicCore && <span className="academic-badge">학술 핵심</span>}<button className={saved ? 'save-word save-word--active' : 'save-word'} onClick={onToggle}>{saved ? '저장됨' : '저장'}</button></div></div>
-    <div className="vocab-meanings"><strong>{entry.meaningKo}</strong><p>{entry.meaningEn}</p></div>
-    <div className="vocab-synonyms"><span>동의어</span>{entry.synonyms.length ? <div>{entry.synonyms.map((word) => <em key={word}>{word}</em>)}</div> : <p>문맥상 가까운 동의어 없음</p>}</div>
+    <div className="vocab-meanings"><ol>{meanings.map((sense, index) => <li key={sense.senseId}><div><span>{index + 1}</span><em>{sense.partOfSpeech}</em>{index === 0 && <small>대표·문맥 뜻</small>}</div><strong>{sense.meaningKo}</strong><p>{sense.meaningEn}</p>{sense.synonyms.length > 0 && <div className="vocab-sense-synonyms">{sense.synonyms.map((synonym) => <em key={synonym}>{synonym}</em>)}</div>}</li>)}</ol></div>
     <blockquote><VocabularyAudioButton label="예문 듣기" accessibleLabel={entry.word} state={audio?.key === exampleKey ? audio : null} onClick={() => onPlay(exampleKey, entry.example)} /><p>{entry.example}</p><footer>{entry.translation || '해석 생성 중'}</footer></blockquote>
     <div className="vocab-meta"><span>{entry.source === 'local-llm' ? '로컬 LLM 문맥 정리' : entry.source === 'dictionary' && entry.frequencyRank ? `영어 사용 빈도 ${entry.frequencyRank.toLocaleString('en-US')}위` : `문항에서 ${entry.frequency}회`}</span><span>{entry.topics.join(' · ')}</span></div>
   </article>

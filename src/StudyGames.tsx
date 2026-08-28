@@ -147,12 +147,13 @@ function MemorizationDeck({ entries, page, onPage, onStartMastery }: { entries: 
   const safePage = Math.min(page, total - 1)
   const entry = entries[safePage]
   if (!entry) return null
+  const otherMeanings = (entry.meanings || []).slice(1)
   return <section className="memorization-deck">
     <div className="memorization-head"><div><span>MASTERY PREP</span><h1>한 장씩, 100개.</h1><p>한 화면에서 단어 하나에 집중하세요. 뜻·동의어·예문을 확인한 뒤 다음 카드로 넘어갑니다.</p></div><strong>{safePage + 1} / {total}</strong></div>
     <div className="memorization-progress"><i style={{ width: `${((safePage + 1) / total) * 100}%` }} /></div>
     <article className="memorization-flashcard" key={entry.word}>
       <div className="memorization-flashcard__top"><span>{String(safePage + 1).padStart(3, '0')}</span><div><small>{entry.partOfSpeech} · {entry.cefr}</small><h2>{entry.word}</h2>{entry.ipa && <em>{entry.ipa}</em>}</div></div>
-      <div className="memorization-flashcard__meaning"><span>한국어 뜻</span><strong>{entry.meaningKo}</strong><p>{entry.meaningEn}</p></div>
+      <div className="memorization-flashcard__meaning"><span>대표·문맥 뜻</span><strong>{entry.meaningKo}</strong><p>{entry.meaningEn}</p>{otherMeanings.length > 0 && <div className="memorization-other-meanings"><small>다른 주요 뜻</small><ol>{otherMeanings.map((sense) => <li key={sense.senseId}><em>{sense.partOfSpeech}</em><b>{sense.meaningKo}</b><p>{sense.meaningEn}</p></li>)}</ol></div>}</div>
       <div className="memorization-flashcard__synonyms"><span>가까운 동의어</span><div>{entry.synonyms.length ? entry.synonyms.slice(0, 3).map((synonym) => <strong key={synonym}>{synonym}</strong>) : <small>등록된 동의어가 없습니다.</small>}</div></div>
       <blockquote><span>CONTEXT EXAMPLE</span><p>{entry.example}</p><small>{entry.translation}</small></blockquote>
       <footer><span>{entry.topics.slice(0, 3).join(' · ')}</span>{entry.academicCore && <strong>ACADEMIC CORE</strong>}</footer>

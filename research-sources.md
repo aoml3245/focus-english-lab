@@ -29,6 +29,10 @@
 - [Ollama Qwen 3.5 9B](https://ollama.com/library/qwen3.5:9b)
   - 16GB Apple Silicon에서 실행 가능한 6.6GB Q4_K_M 모델을 로컬 Writing 코치 기본값으로 선택했습니다.
 - [Ollama Structured Outputs](https://docs.ollama.com/capabilities/structured-outputs)
+- [Google Gemma 3 model card](https://ai.google.dev/gemma/docs/core/model_card_3)
+  - 4B 모델의 128K 문맥과 140개 이상 언어 지원을 전체 어휘의 독립 의미 검수 모델 선정 근거로 사용했습니다.
+- [Ollama TranslateGemma](https://ollama.com/library/translategemma)
+  - 두 일반 지시 모델이 번역에 동의하지 않거나 문자·길이 품질 검사를 통과하지 못한 의미만 다시 번역하는 전용 모델로 사용했습니다.
   - 기준별 점수, 오류, 수정 계획, 개선 답안을 안정적으로 분리하기 위해 JSON schema 출력을 사용했습니다.
 
 ## 적용 방식

@@ -1,3 +1,11 @@
+export type LearningSense = {
+  senseId: string
+  meaningKo: string
+  meaningEn: string
+  partOfSpeech: string
+  synonyms: string[]
+}
+
 export type LearningEntry = {
   word: string
   meaningKo: string
@@ -6,6 +14,7 @@ export type LearningEntry = {
   cefr: string
   ipa: string
   synonyms: string[]
+  meanings?: LearningSense[]
   example: string
   translation: string
   frequency: number
@@ -15,6 +24,8 @@ export type LearningEntry = {
   source?: 'corpus' | 'dictionary' | 'local-llm'
   context?: string
   savedAt?: string
+  meaningReview?: string
+  translationRepairs?: number
 }
 
 export type LocalLlmConfig = {

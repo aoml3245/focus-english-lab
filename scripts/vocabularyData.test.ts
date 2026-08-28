@@ -32,4 +32,22 @@ describe('29,976-entry vocabulary artifact', () => {
     expect(added).toHaveLength(27_980)
     expect(added.every((entry) => Number.isInteger(entry.frequencyRank) && (entry.frequencyRank ?? 0) > 0)).toBe(true)
   })
+
+  it('keeps the reviewed pilot internally consistent and context-appropriate', () => {
+    const reviewed = vocabulary.filter((entry) => entry.meaningReview === 'ollama-consensus-wordnet-v3')
+    expect(reviewed).toHaveLength(120)
+    for (const entry of reviewed) {
+      expect(entry.meanings?.length).toBeGreaterThanOrEqual(1)
+      expect(entry.meanings?.length).toBeLessThanOrEqual(3)
+      expect(entry.meaningKo).toBe(entry.meanings?.[0].meaningKo)
+      expect(entry.meaningEn).toBe(entry.meanings?.[0].meaningEn)
+      expect(entry.partOfSpeech).toBe(entry.meanings?.[0].partOfSpeech)
+    }
+    const words = new Map(reviewed.map((entry) => [entry.word, entry]))
+    expect(words.get('accessibility')?.meaningKo).toContain('접근')
+    expect(words.get('acoustic')?.meaningKo).toBe('음향의')
+    expect(words.get('authorities')?.meaningKo).toContain('당국')
+    expect(words.get('community')?.meaningKo).toContain('지역 사회')
+    expect(words.get('constraint')?.meaningKo).toContain('제한 조건')
+  })
 })
