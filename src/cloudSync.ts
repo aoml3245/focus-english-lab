@@ -1,6 +1,6 @@
 import { getApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app'
 import { GoogleAuthProvider, getAuth, getRedirectResult, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut, type User } from 'firebase/auth'
-import { Timestamp, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, runTransaction, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore'
+import { Timestamp, deleteDoc, doc, getDoc, getFirestore, runTransaction, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore'
 import { createPersonalVocabularyBackup, importPersonalVocabularyBackup, type PersonalVocabularyBackup } from './personalVocabulary'
 import { notifyPrivateDataApplied } from './privateDataEvents'
 import { createSessionBackup, importSessionBackup, type SessionBackup } from './storage'
@@ -32,6 +32,23 @@ export type CloudAccess = {
   authorized: boolean
   owner: boolean
   partnerUid: string | null
+}
+
+export type CloudSyncProgress = {
+  phase: 'downloading' | 'merging' | 'uploading' | 'done'
+  completed: number
+  total: number
+  downloadedBytes: number
+  label: string
+}
+
+export type VocabularyDownloadProgress = {
+  phase: 'manifest' | 'downloading' | 'processing' | 'done'
+  completedChunks: number
+  totalChunks: number
+  downloadedBytes: number
+  totalBytes?: number
+  loadedEntries: number
 }
 
 export function watchCloudUser(callback: (user: User | null) => void, onError?: (error: Error) => void) {
@@ -182,7 +199,7 @@ const checkedPayload = (backup: unknown) => {
   return payload
 }
 
-export async function syncPrivateLearningData(user: User) {
+export async function syncPrivateLearningData(user: User, onProgress?: (progress: CloudSyncProgress) => void) {
   if (applyingRemote) return
   const access = await resolveCloudAccess(user)
   if (!access.authorized) throw new Error('이 계정은 아직 개인 그룹에 연결되지 않았습니다.')
@@ -191,7 +208,18 @@ export async function syncPrivateLearningData(user: User) {
   try {
     const privateRef = doc(db, 'users', user.uid, 'state', 'personalVocabulary')
     const sharedRef = doc(db, 'groups', CLOUD_GROUP_ID, 'state', 'sharedVocabulary')
-    const [remotePrivate, remoteShared] = await Promise.all([getDoc(privateRef), getDoc(sharedRef)])
+    let completed = 0
+    let downloadedBytes = 0
+    const reportDownloaded = (payload: unknown) => {
+      completed += 1
+      if (typeof payload === 'string') downloadedBytes += new TextEncoder().encode(payload).byteLength
+      onProgress?.({ phase: 'downloading', completed, total: 2, downloadedBytes, label: '개인 기록과 공유 단어 목록을 받고 있습니다.' })
+    }
+    onProgress?.({ phase: 'downloading', completed: 0, total: 2, downloadedBytes: 0, label: '개인 기록과 공유 단어 목록을 받고 있습니다.' })
+    const privatePromise = getDoc(privateRef).then((snapshot) => { reportDownloaded(snapshot.data()?.payload); return snapshot })
+    const sharedPromise = getDoc(sharedRef).then((snapshot) => { reportDownloaded(snapshot.data()?.payload); return snapshot })
+    const [remotePrivate, remoteShared] = await Promise.all([privatePromise, sharedPromise])
+    onProgress?.({ phase: 'merging', completed: 2, total: 2, downloadedBytes, label: '받은 기록을 이 기기의 기록과 합치고 있습니다.' })
     const privateBackup = parsePrivateCloudBackup(remotePrivate.data()?.payload)
     const groupBackup = parseBackup(remoteShared.data()?.payload)
     if (privateBackup) {
@@ -202,22 +230,54 @@ export async function syncPrivateLearningData(user: User) {
     const batch = writeBatch(db)
     batch.set(privateRef, { payload: checkedPayload(createPrivateCloudBackup()), updatedAt: serverTimestamp(), schemaVersion: 1 })
     batch.set(sharedRef, { payload: checkedPayload(sharedBackup()), updatedAt: serverTimestamp(), updatedBy: user.uid, schemaVersion: 1 })
+    onProgress?.({ phase: 'uploading', completed: 2, total: 2, downloadedBytes, label: '합친 결과를 계정에 안전하게 저장하고 있습니다.' })
     await batch.commit()
+    onProgress?.({ phase: 'done', completed: 2, total: 2, downloadedBytes, label: '개인 기록 동기화를 완료했습니다.' })
     notifyPrivateDataApplied()
   } finally {
     applyingRemote = false
   }
 }
 
-export async function fetchPrivateVocabulary(): Promise<Blob> {
+export async function fetchPrivateVocabulary(onProgress?: (progress: VocabularyDownloadProgress) => void): Promise<Blob> {
   const { auth, db } = services()
   if (!auth.currentUser) throw new Error('단어장을 사용하려면 먼저 로그인해 주세요.')
   const access = await resolveCloudAccess(auth.currentUser)
   if (!access.authorized) throw new Error('이 계정에는 단어장 접근 권한이 없습니다.')
-  const snapshot = await getDocs(collection(db, 'groups', CLOUD_GROUP_ID, 'vocabularyChunks'))
-  if (snapshot.empty) throw new Error('비공개 단어장이 아직 업로드되지 않았습니다. 소유자 설정에서 초기 업로드를 완료해 주세요.')
-  const chunks = snapshot.docs.map((item) => item.data() as { index: number; entries: string }).sort((a, b) => a.index - b.index)
-  const entries = chunks.flatMap((chunk) => JSON.parse(chunk.entries) as unknown[])
+  const manifestRef = doc(db, 'groups', CLOUD_GROUP_ID, 'vocabularyMeta', 'manifest')
+  onProgress?.({ phase: 'manifest', completedChunks: 0, totalChunks: 0, downloadedBytes: 0, loadedEntries: 0 })
+  const manifest = await getDoc(manifestRef)
+  const manifestData = manifest.data()
+  const totalChunks = Number(manifestData?.chunkCount || 0)
+  const totalBytes = Number(manifestData?.totalBytes || 0) || undefined
+  if (!totalChunks) throw new Error('비공개 단어장이 아직 업로드되지 않았습니다. 소유자 설정에서 초기 업로드를 완료해 주세요.')
+  const chunkEntries: unknown[][] = new Array(totalChunks)
+  let nextIndex = 0
+  let completedChunks = 0
+  let downloadedBytes = 0
+  let loadedEntries = 0
+  const encoder = new TextEncoder()
+  onProgress?.({ phase: 'downloading', completedChunks, totalChunks, downloadedBytes, totalBytes, loadedEntries })
+  const worker = async () => {
+    while (nextIndex < totalChunks) {
+      const index = nextIndex
+      nextIndex += 1
+      const snapshot = await getDoc(doc(db, 'groups', CLOUD_GROUP_ID, 'vocabularyChunks', index.toString().padStart(4, '0')))
+      if (!snapshot.exists()) throw new Error(`비공개 단어장 ${index + 1}번 조각을 찾지 못했습니다.`)
+      const payload = String(snapshot.data().entries || '[]')
+      const parsed = JSON.parse(payload) as unknown[]
+      chunkEntries[index] = parsed
+      completedChunks += 1
+      downloadedBytes += encoder.encode(payload).byteLength
+      loadedEntries += parsed.length
+      onProgress?.({ phase: 'downloading', completedChunks, totalChunks, downloadedBytes, totalBytes, loadedEntries })
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, totalChunks) }, () => worker()))
+  onProgress?.({ phase: 'processing', completedChunks, totalChunks, downloadedBytes, totalBytes: totalBytes || downloadedBytes, loadedEntries })
+  if (!totalBytes && access.owner) void setDoc(manifestRef, { totalBytes: downloadedBytes }, { merge: true }).catch(() => undefined)
+  const entries = chunkEntries.flat()
+  onProgress?.({ phase: 'done', completedChunks, totalChunks, downloadedBytes, totalBytes: totalBytes || downloadedBytes, loadedEntries: entries.length })
   return new Blob([JSON.stringify(entries)], { type: 'application/json' })
 }
 
@@ -259,7 +319,8 @@ export async function uploadPrivateVocabulary(user: User, file: File) {
     for (let index = chunks.length; index < previousCount; index += 1) batch.delete(doc(db, 'groups', CLOUD_GROUP_ID, 'vocabularyChunks', index.toString().padStart(4, '0')))
     await batch.commit()
   }
-  await setDoc(manifestRef, { chunkCount: chunks.length, entryCount: entries.length, uploadedBy: user.uid, updatedAt: serverTimestamp(), schemaVersion: 1 })
+  const totalBytes = chunks.reduce((sum, payload) => sum + encoder.encode(payload).byteLength, 0)
+  await setDoc(manifestRef, { chunkCount: chunks.length, entryCount: entries.length, totalBytes, uploadedBy: user.uid, updatedAt: serverTimestamp(), schemaVersion: 1 })
   return { entries: entries.length, chunks: chunks.length }
 }
 

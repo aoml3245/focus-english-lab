@@ -3,6 +3,7 @@ import { ArrowIcon, Brand } from './components'
 import { loadFavorites, loadPersonalWords, removePersonalWord, requestVocabulary, saveFavorites, type LearningEntry } from './learning'
 import PersonalVocabularyWorkspace from './PersonalVocabularyWorkspace'
 import { loadVoiceProfileId, playTTS, prepareSpeech, stopTTS } from './tts'
+import type { VocabularyDownloadProgress } from './cloudSync'
 
 type IndexedEntry = LearningEntry & { searchText: string }
 type VocabularyAudioState = { key: string; phase: 'preparing' | 'ready' | 'playing' | 'done' | 'error'; status: string }
@@ -14,6 +15,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
   const [vocabulary, setVocabulary] = useState<IndexedEntry[]>([])
   const [dictionaryVocabulary, setDictionaryVocabulary] = useState<LearningEntry[]>([])
   const [loadError, setLoadError] = useState('')
+  const [downloadProgress, setDownloadProgress] = useState<VocabularyDownloadProgress | null>(null)
   const [query, setQuery] = useState('')
   const deferredQuery = useDeferredValue(query.trim().toLowerCase())
   const [level, setLevel] = useState('All')
@@ -29,7 +31,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
   const audioPreparation = useRef<AbortController | null>(null)
   useEffect(() => {
     let active = true
-    requestVocabulary().then((entries) => {
+    requestVocabulary((progress) => { if (active) setDownloadProgress(progress) }).then((entries) => {
       if (!active) return
       setDictionaryVocabulary(entries)
       const merged = new Map(entries.map((entry) => [entry.word, entry]))
@@ -39,6 +41,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
       }
       setVocabulary([...merged.values()].map((entry) => ({ ...entry, searchText: [entry.word, entry.meaningKo, entry.meaningEn, ...entry.synonyms, ...entry.topics, ...(entry.meanings || []).flatMap((sense) => [sense.meaningKo, sense.meaningEn, ...sense.synonyms])].join(' ').toLowerCase() })))
       setFavorites(loadFavorites())
+      setDownloadProgress(null)
     }).catch((error: unknown) => { if (active) setLoadError(error instanceof Error ? error.message : '단어장 데이터를 불러오지 못했습니다.') })
     return () => { active = false }
   }, [libraryVersion])
@@ -137,11 +140,24 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
         <button className={savedOnly ? 'filter-toggle filter-toggle--active' : 'filter-toggle'} onClick={() => changeFilter(() => setSavedOnly((value) => !value))}>{savedOnly ? '내가 만든 단어장 보는 중' : '내가 만든 단어장'}</button>
       </section>
       <div className="vocab-result-head"><p><strong>{filtered.length.toLocaleString('en-US')}</strong>개 단어</p><span>{safePage + 1} / {pages} 페이지</span></div>
-      {loadError ? <div className="vocab-empty"><strong>{loadError}</strong><span>페이지를 새로고침해 다시 시도해 주세요.</span></div> : !vocabulary.length ? <div className="vocab-empty"><strong>단어장을 불러오는 중입니다.</strong><span>약 3만 개 어휘를 정리하고 있습니다.</span></div> : visible.length ? <section className="vocab-list" aria-label="단어 목록">{visible.map((entry) => <VocabularyCard key={entry.word} entry={entry} saved={favorites.has(entry.word)} audio={audio} onPlay={playVocabularyAudio} onToggle={() => toggleFavorite(entry.word)} />)}</section> : <div className="vocab-empty"><strong>조건에 맞는 단어가 없습니다.</strong><span>검색어나 필터를 바꿔 보세요.</span></div>}
+      {loadError ? <div className="vocab-empty"><strong>{loadError}</strong><span>페이지를 새로고침해 다시 시도해 주세요.</span></div> : !vocabulary.length ? <VocabularyLoading progress={downloadProgress} /> : visible.length ? <section className="vocab-list" aria-label="단어 목록">{visible.map((entry) => <VocabularyCard key={entry.word} entry={entry} saved={favorites.has(entry.word)} audio={audio} onPlay={playVocabularyAudio} onToggle={() => toggleFavorite(entry.word)} />)}</section> : <div className="vocab-empty"><strong>조건에 맞는 단어가 없습니다.</strong><span>검색어나 필터를 바꿔 보세요.</span></div>}
       {pages > 1 && <nav className="vocab-pagination" aria-label="단어장 페이지"><button disabled={safePage === 0} onClick={() => { stopVocabularyAudio(); setPage(Math.max(0, safePage - 1)) }}><ArrowIcon direction="left" /> 이전</button><span>{safePage + 1} / {pages}</span><button disabled={safePage === pages - 1} onClick={() => { stopVocabularyAudio(); setPage(Math.min(pages - 1, safePage + 1)) }}>다음 <ArrowIcon /></button></nav>}
       <p className="vocab-attribution">학술 핵심 기준: 앱 문항 빈도 또는 B2–C2 난이도와 공개 사전 빈도<br />어휘 정보: <a href="https://github.com/jhseo1211/open-english-korean-dict" target="_blank" rel="noreferrer">Open English–Korean Dictionary</a> · <a href="https://en-word.net/downloads" target="_blank" rel="noreferrer">Open English WordNet 2025</a></p>
     </main>
   </div>
+}
+
+function formatDownloadBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function VocabularyLoading({ progress }: { progress: VocabularyDownloadProgress | null }) {
+  const percent = progress?.totalChunks ? Math.round(progress.completedChunks / progress.totalChunks * 100) : 0
+  const amount = progress ? `${formatDownloadBytes(progress.downloadedBytes)}${progress.totalBytes ? ` / ${formatDownloadBytes(progress.totalBytes)}` : ''}` : '0 B'
+  const title = progress?.phase === 'manifest' ? '단어장 다운로드 목록을 확인하고 있습니다.' : progress?.phase === 'processing' ? '받은 단어를 검색 가능한 목록으로 정리하고 있습니다.' : '비공개 단어장을 받고 있습니다.'
+  return <div className="vocab-download" role="status" aria-live="polite"><strong>{title}</strong><div className="vocab-download__meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div><div><span>{progress?.completedChunks || 0} / {progress?.totalChunks || '—'}개 조각</span><span>{amount} 받음</span></div><small>{(progress?.loadedEntries || 0).toLocaleString('ko-KR')}개 단어 불러옴</small></div>
 }
 
 function SpeakerIcon({ stopped = false }: { stopped?: boolean }) {

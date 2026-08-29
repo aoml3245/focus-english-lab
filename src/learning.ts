@@ -44,11 +44,11 @@ const DEFAULT_CONFIG: LocalLlmConfig = { endpoint: 'http://127.0.0.1:11434', mod
 
 let vocabularyRequest: Promise<LearningEntry[]> | null = null
 
-export function requestVocabulary() {
+export function requestVocabulary(onProgress?: (progress: import('./cloudSync').VocabularyDownloadProgress) => void) {
   vocabularyRequest ||= (async () => {
     if (import.meta.env.PROD || import.meta.env.VITE_FIREBASE_PROJECT_ID) {
       const { fetchPrivateVocabulary } = await import('./cloudSync')
-      return JSON.parse(await (await fetchPrivateVocabulary()).text()) as LearningEntry[]
+      return JSON.parse(await (await fetchPrivateVocabulary(onProgress)).text()) as LearningEntry[]
     }
     const response = await fetch('/__private/vocabulary.json')
     if (!response.ok) throw new Error('단어장 데이터를 불러오지 못했습니다.')
