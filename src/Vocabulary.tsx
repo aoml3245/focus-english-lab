@@ -41,7 +41,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
       }
       setVocabulary([...merged.values()].map((entry) => ({ ...entry, searchText: [entry.word, entry.meaningKo, entry.meaningEn, ...entry.synonyms, ...entry.topics, ...(entry.meanings || []).flatMap((sense) => [sense.meaningKo, sense.meaningEn, ...sense.synonyms])].join(' ').toLowerCase() })))
       setFavorites(loadFavorites())
-      setDownloadProgress(null)
+      window.setTimeout(() => { if (active) setDownloadProgress(null) }, 5000)
     }).catch((error: unknown) => { if (active) setLoadError(error instanceof Error ? error.message : '단어장 데이터를 불러오지 못했습니다.') })
     return () => { active = false }
   }, [libraryVersion])
@@ -130,6 +130,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
     <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header>
     <main>
       <div className="vocab-hero"><div><h1>문장으로 익히는 단어장</h1><p>문제은행의 문맥 어휘와 공개 사전에서 품질 조건을 통과한 약 3만 개를 한곳에 정리했습니다. 단어와 예문은 음성 설정에서 고른 목소리로 들을 수 있습니다.</p></div><dl><div><dt>전체 어휘</dt><dd>{vocabulary.length ? vocabulary.length.toLocaleString('en-US') : '—'}</dd></div><div><dt>학술 핵심</dt><dd>{vocabulary.length ? academicCount.toLocaleString('en-US') : '—'}</dd></div><div><dt>저장한 단어</dt><dd>{favorites.size.toLocaleString('en-US')}</dd></div></dl></div>
+      {vocabulary.length > 0 && downloadProgress?.phase === 'done' && <VocabularyCacheSummary progress={downloadProgress} />}
       <PersonalVocabularyWorkspace vocabulary={dictionaryVocabulary} onLibraryChanged={() => setLibraryVersion((value) => value + 1)} />
       <section className="vocab-controls" aria-label="단어장 검색과 필터">
         <label className="vocab-search"><span>단어 검색</span><input type="search" value={query} onChange={(event) => changeFilter(() => setQuery(event.target.value))} placeholder="영어 단어, 한국어 뜻, 동의어 검색" /></label>
@@ -158,6 +159,10 @@ function VocabularyLoading({ progress }: { progress: VocabularyDownloadProgress 
   const amount = progress ? `${formatDownloadBytes(progress.downloadedBytes)} 새로 받음${progress.totalBytes ? ` · 전체 ${formatDownloadBytes(progress.totalBytes)}` : ''}` : '0 B 새로 받음'
   const title = progress?.phase === 'manifest' ? '단어장 다운로드 목록을 확인하고 있습니다.' : progress?.phase === 'processing' ? '받은 단어를 검색 가능한 목록으로 정리하고 있습니다.' : '비공개 단어장을 받고 있습니다.'
   return <div className="vocab-download" role="status" aria-live="polite"><strong>{title}</strong><div className="vocab-download__meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div><div><span>{progress?.completedChunks || 0} / {progress?.totalChunks || '—'}개 조각</span><span>{amount}</span></div><small>{(progress?.loadedEntries || 0).toLocaleString('ko-KR')}개 단어 불러옴 · 캐시 {progress?.cachedChunks || 0}개 재사용</small></div>
+}
+
+function VocabularyCacheSummary({ progress }: { progress: VocabularyDownloadProgress }) {
+  return <div className="vocab-cache-summary" role="status"><strong>단어장 준비 완료</strong><span>캐시 {progress.cachedChunks}개 재사용 · Firebase에서 {formatDownloadBytes(progress.downloadedBytes)} 새로 받음 · 전체 {progress.totalChunks}개 조각</span></div>
 }
 
 function SpeakerIcon({ stopped = false }: { stopped?: boolean }) {
