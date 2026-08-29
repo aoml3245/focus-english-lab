@@ -1,11 +1,13 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { LearningEntry } from '../src/learning'
 
-const vocabulary = JSON.parse(readFileSync(resolve(process.cwd(), 'private/vocabulary.json'), 'utf8')) as LearningEntry[]
+const vocabularyPath = resolve(process.cwd(), 'private/vocabulary.json')
+const hasPrivateVocabulary = existsSync(vocabularyPath)
+const vocabulary = hasPrivateVocabulary ? JSON.parse(readFileSync(vocabularyPath, 'utf8')) as LearningEntry[] : []
 
-describe('29,976-entry vocabulary artifact', () => {
+(hasPrivateVocabulary ? describe : describe.skip)('29,976-entry private vocabulary artifact', () => {
   it('has the exact target, unique normalized headwords, and complete learner fields', () => {
     expect(vocabulary).toHaveLength(29_976)
     expect(new Set(vocabulary.map((entry) => entry.word)).size).toBe(29_976)

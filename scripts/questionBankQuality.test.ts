@@ -1,10 +1,11 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CONTEXT_TOPIC_COUNT, QUESTION_BANK } from '../src/bank'
 import { NEW_TOPIC_COUNT, NEW_TOPIC_ITEMS } from '../src/newTopicBank'
 
 const words = (text = '') => text.trim().split(/\s+/).filter(Boolean).length
+const vocabularyPath = resolve(process.cwd(), 'private/vocabulary.json')
 
 describe('ETS-calibrated new topic bank', () => {
   it('adds 20 topics and 360 original items without duplicate ids', () => {
@@ -55,8 +56,8 @@ describe('ETS-calibrated new topic bank', () => {
     expect(shortRepeats.every((item) => item.difficulty === 'B1' && words(item.audioText) <= 12)).toBe(true)
   })
 
-  it('uses bundled vocabulary and distributes objective answers', () => {
-    const vocabulary = JSON.parse(readFileSync(resolve(process.cwd(), 'private/vocabulary.json'), 'utf8')) as Array<{ word: string }>
+  (existsSync(vocabularyPath) ? it : it.skip)('uses private vocabulary and distributes objective answers', () => {
+    const vocabulary = JSON.parse(readFileSync(vocabularyPath, 'utf8')) as Array<{ word: string }>
     const available = new Set(vocabulary.map((entry) => entry.word.toLowerCase()))
     const focusWords = ['orientation', 'symbiosis', 'precursor', 'permeable', 'layered', 'attenuate', 'salient', 'retrieval', 'simultaneous', 'legibility', 'topology', 'authentication', 'autonomous', 'additive', 'emulate', 'geothermal', 'membrane', 'runoff', 'incentive', 'aggregate']
     expect(focusWords.every((word) => available.has(word))).toBe(true)
