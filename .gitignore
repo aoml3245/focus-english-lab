@@ -13,3 +13,4 @@ scripts/data/
 coverage/
 .cache/
 public/ort/
+private/

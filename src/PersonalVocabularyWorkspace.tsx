@@ -26,6 +26,7 @@ const fallbackEntry = (word: string, meaningKo: string): LearningEntry => ({
 })
 
 const offerBackup = (message: string) => {
+  if (import.meta.env.PROD || import.meta.env.VITE_FIREBASE_PROJECT_ID) return
   window.setTimeout(() => {
     if (window.confirm(`${message}\n\n지금 개인 단어장과 학습 기록을 백업 파일로 저장할까요?`)) downloadPersonalVocabularyBackup()
   }, 0)

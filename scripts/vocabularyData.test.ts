@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { LearningEntry } from '../src/learning'
 
-const vocabulary = JSON.parse(readFileSync(resolve(process.cwd(), 'public/vocabulary.json'), 'utf8')) as LearningEntry[]
+const vocabulary = JSON.parse(readFileSync(resolve(process.cwd(), 'private/vocabulary.json'), 'utf8')) as LearningEntry[]
 
 describe('29,976-entry vocabulary artifact', () => {
   it('has the exact target, unique normalized headwords, and complete learner fields', () => {

@@ -13,12 +13,12 @@ while true; do
     --draft-cache work/vocabulary/semantic-draft-sample-v7.jsonl \
     --validation-cache work/vocabulary/semantic-validation-sample-v7.jsonl \
     --cache work/vocabulary/semantic-review-sample-v7.jsonl \
-    --output public/vocabulary.json \
+    --output private/vocabulary.json \
     --report work/vocabulary/semantic-quality-report-full.json
-  status=$?
-  if (( status == 0 )); then
+  exit_code=$?
+  if (( exit_code == 0 )); then
     exit 0
   fi
-  print -r -- "[$(date '+%Y-%m-%d %H:%M:%S')] review exited with status $status; retrying in 30 seconds"
+  print -r -- "[$(date '+%Y-%m-%d %H:%M:%S')] review exited with status $exit_code; retrying in 30 seconds"
   sleep 30
 done

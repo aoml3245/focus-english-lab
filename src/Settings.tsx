@@ -7,6 +7,7 @@ import { getCoachModelStatus, loadSelectedCoachModel, saveSelectedCoachModel, ty
 import { APP_VERSION } from './version'
 import { refreshAppToLatest } from './AppUpdate'
 import { loadThemePreference, saveThemePreference, type ThemePreference } from './theme'
+import CloudSyncSettings from './CloudSyncSettings'
 
 const EMPTY_CACHE: TtsAudioCacheStats = { entries: 0, bytes: 0 }
 const formatMegabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(bytes ? 1 : 0)} MB`
@@ -140,12 +141,17 @@ export default function Settings({ onBack, onVoiceSettings, onExamData }: { onBa
       </section>
 
       <section className="settings-section">
-        <div className="settings-section-head"><div><span>06</span><h2>브라우저 저장공간</h2><p>생성된 음성만 제한된 용량으로 저장합니다. Kokoro 모델과 학습 기록은 이 버튼으로 지우지 않습니다.</p></div><button className="button button--secondary" onClick={clearCache} disabled={cacheBusy || cache.entries === 0}>{cacheBusy ? '확인 중…' : '생성 음성 비우기'}</button></div>
+        <div className="settings-section-head"><div><span>06</span><h2>개인 계정과 2인 공유</h2><p>내 기록은 계정별로 따로 보관하고, 공유 코드를 연결한 두 사용자만 같은 단어 목록을 사용합니다.</p></div></div>
+        <CloudSyncSettings />
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-section-head"><div><span>07</span><h2>브라우저 저장공간</h2><p>생성된 음성만 제한된 용량으로 저장합니다. Kokoro 모델과 학습 기록은 이 버튼으로 지우지 않습니다.</p></div><button className="button button--secondary" onClick={clearCache} disabled={cacheBusy || cache.entries === 0}>{cacheBusy ? '확인 중…' : '생성 음성 비우기'}</button></div>
         <div className="settings-cache-meter"><div><strong>{formatMegabytes(cache.bytes)}</strong><span> / {formatMegabytes(TTS_AUDIO_CACHE_MAX_BYTES)}</span></div><div className="settings-meter" aria-label="생성 음성 캐시 사용량"><span style={{ width: `${Math.min(100, cache.bytes / TTS_AUDIO_CACHE_MAX_BYTES * 100)}%` }} /></div><small>{cache.entries} / {TTS_AUDIO_CACHE_MAX_ENTRIES}개 · {cacheMessage}</small></div>
       </section>
 
       <section className="settings-section">
-        <div className="settings-section-head"><div><span>07</span><h2>앱 업데이트</h2><p>GitHub Pages의 최신 배포를 다시 확인하고, 이전 앱 파일 캐시를 우회해 새 버전으로 재시작합니다.</p></div><button className="button button--primary" onClick={() => { void forceUpdate() }} disabled={updateBusy}>{updateBusy ? '최신 버전 확인 중…' : '최신 버전 강제 적용'}</button></div>
+        <div className="settings-section-head"><div><span>08</span><h2>앱 업데이트</h2><p>GitHub Pages의 최신 배포를 다시 확인하고, 이전 앱 파일 캐시를 우회해 새 버전으로 재시작합니다.</p></div><button className="button button--primary" onClick={() => { void forceUpdate() }} disabled={updateBusy}>{updateBusy ? '최신 버전 확인 중…' : '최신 버전 강제 적용'}</button></div>
         <dl className="settings-summary"><div><dt>현재 실행 버전</dt><dd>{APP_VERSION}</dd></div><div><dt>보존되는 데이터</dt><dd>학습 기록 · 단어장 · 음성 모델</dd></div></dl>
         <p className="settings-status" role="status" aria-live="polite">{updateMessage}</p>
       </section>

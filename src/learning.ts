@@ -6,6 +6,8 @@ export type LearningSense = {
   synonyms: string[]
 }
 
+import { notifyPrivateDataChanged } from './privateDataEvents'
+
 export type LearningEntry = {
   word: string
   meaningKo: string
@@ -43,10 +45,15 @@ const DEFAULT_CONFIG: LocalLlmConfig = { endpoint: 'http://127.0.0.1:11434', mod
 let vocabularyRequest: Promise<LearningEntry[]> | null = null
 
 export function requestVocabulary() {
-  vocabularyRequest ||= fetch(`${import.meta.env.BASE_URL}vocabulary.json`).then((response) => {
+  vocabularyRequest ||= (async () => {
+    if (import.meta.env.PROD || import.meta.env.VITE_FIREBASE_PROJECT_ID) {
+      const { fetchPrivateVocabulary } = await import('./cloudSync')
+      return JSON.parse(await (await fetchPrivateVocabulary()).text()) as LearningEntry[]
+    }
+    const response = await fetch('/__private/vocabulary.json')
     if (!response.ok) throw new Error('단어장 데이터를 불러오지 못했습니다.')
     return response.json() as Promise<LearningEntry[]>
-  })
+  })()
   return vocabularyRequest
 }
 
@@ -62,7 +69,7 @@ export function loadFavorites() {
 }
 
 export function saveFavorites(words: Set<string>) {
-  try { localStorage.setItem(FAVORITES_KEY, JSON.stringify([...words])) } catch { /* storage can be disabled */ }
+  try { localStorage.setItem(FAVORITES_KEY, JSON.stringify([...words])); notifyPrivateDataChanged() } catch { /* storage can be disabled */ }
 }
 
 export function loadPersonalWords() {
@@ -76,7 +83,7 @@ export function savePersonalWord(entry: LearningEntry) {
   const word = normalizeWord(entry.word)
   const current = loadPersonalWords()
   const next = [{ ...entry, word, savedAt: new Date().toISOString() }, ...current.filter((item) => normalizeWord(item.word) !== word)]
-  try { localStorage.setItem(PERSONAL_WORDS_KEY, JSON.stringify(next)) } catch { /* storage can be disabled */ }
+  try { localStorage.setItem(PERSONAL_WORDS_KEY, JSON.stringify(next)); notifyPrivateDataChanged() } catch { /* storage can be disabled */ }
   const favorites = loadFavorites()
   favorites.add(word)
   saveFavorites(favorites)
@@ -85,7 +92,7 @@ export function savePersonalWord(entry: LearningEntry) {
 
 export function removePersonalWord(word: string) {
   const normalized = normalizeWord(word)
-  try { localStorage.setItem(PERSONAL_WORDS_KEY, JSON.stringify(loadPersonalWords().filter((item) => normalizeWord(item.word) !== normalized))) } catch { /* storage can be disabled */ }
+  try { localStorage.setItem(PERSONAL_WORDS_KEY, JSON.stringify(loadPersonalWords().filter((item) => normalizeWord(item.word) !== normalized))); notifyPrivateDataChanged() } catch { /* storage can be disabled */ }
 }
 
 export function loadLocalLlmConfig(): LocalLlmConfig {

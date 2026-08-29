@@ -1,4 +1,5 @@
 import { FAVORITES_KEY, PERSONAL_WORDS_KEY, loadFavorites, loadPersonalWords, normalizeWord, type LearningEntry } from './learning'
+import { notifyPrivateDataChanged } from './privateDataEvents'
 
 export type PersonalWordStat = {
   word: string
@@ -180,7 +181,7 @@ export function recordPersonalWordAttempt(word: string, correct: boolean, master
     lastStudiedAt: now,
     masteredAt: mastered ? previous?.masteredAt || now : previous?.masteredAt,
   }
-  try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)) } catch { /* storage can be disabled */ }
+  try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); notifyPrivateDataChanged() } catch { /* storage can be disabled */ }
   return stats[normalized]
 }
 
@@ -192,13 +193,14 @@ export function markPersonalWordsMastered(words: string[]) {
     const previous = stats[word]
     stats[word] = { word, attempts: previous?.attempts || 0, correct: previous?.correct || 0, incorrect: previous?.incorrect || 0, lastStudiedAt: previous?.lastStudiedAt || now, masteredAt: previous?.masteredAt || now }
   }
-  try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)) } catch { /* storage can be disabled */ }
+  try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); notifyPrivateDataChanged() } catch { /* storage can be disabled */ }
 }
 
 export function saveActiveDailyBatch(batch: DailyWordBatch | null) {
   try {
     if (batch) localStorage.setItem(ACTIVE_BATCH_KEY, JSON.stringify(batch))
     else localStorage.removeItem(ACTIVE_BATCH_KEY)
+    notifyPrivateDataChanged()
   } catch { /* storage can be disabled */ }
 }
 
@@ -211,7 +213,7 @@ export function loadActiveDailyBatch(): DailyWordBatch | null {
 
 export function saveVocabularySession(session: VocabularySession) {
   const sessions = loadVocabularySessions()
-  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify([session, ...sessions].slice(0, 200))) } catch { /* storage can be disabled */ }
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify([session, ...sessions].slice(0, 200))); notifyPrivateDataChanged() } catch { /* storage can be disabled */ }
 }
 
 export function loadVocabularySessions(): VocabularySession[] {
@@ -299,5 +301,6 @@ export function importPersonalVocabularyBackup(text: string) {
   localStorage.setItem(STATS_KEY, JSON.stringify(mergedStats))
   localStorage.setItem(SESSIONS_KEY, JSON.stringify([...sessions.values()].sort((a, b) => b.completedAt.localeCompare(a.completedAt)).slice(0, 200)))
   if (!loadActiveDailyBatch() && backup.activeBatch && !backup.activeBatch.complete) saveActiveDailyBatch(backup.activeBatch)
+  notifyPrivateDataChanged()
   return { words: words.size, sessions: sessions.size }
 }

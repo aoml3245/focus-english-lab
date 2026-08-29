@@ -1,6 +1,6 @@
 # Vocabulary data license
 
-`public/vocabulary.json` is a separate data artifact and is not covered by the repository's MIT software license.
+The private `vocabulary.json` data artifact is separate from the deployed application bundle and is not covered by the repository's MIT software license.
 
 ## Open English–Korean Dictionary-derived fields
 
@@ -22,4 +22,4 @@ The source databases are not checked into this repository. After downloading the
 
 ## Original corpus fields
 
-Example sentences, Korean example translations, topic labels and frequency counts tied to this project's independently written question corpus remain subject to the licenses stated above when distributed as part of the combined `public/vocabulary.json` dataset. The original question corpus in `src/` is not copied from official test questions and is distributed with the source code under the MIT License.
+Example sentences, Korean example translations, topic labels and frequency counts tied to this project's independently written question corpus remain subject to the licenses stated above when distributed as part of the combined private `vocabulary.json` dataset. The original question corpus in `src/` is not copied from official test questions and is distributed with the source code under the MIT License.

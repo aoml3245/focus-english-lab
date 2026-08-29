@@ -1,6 +1,6 @@
 # Third-party vocabulary data notices
 
-The generated vocabulary dataset in `public/vocabulary.json` incorporates lexical metadata from the following sources.
+The generated private vocabulary dataset incorporates lexical metadata from the following sources.
 
 ## Open English–Korean Dictionary
 

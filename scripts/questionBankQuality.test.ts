@@ -56,7 +56,7 @@ describe('ETS-calibrated new topic bank', () => {
   })
 
   it('uses bundled vocabulary and distributes objective answers', () => {
-    const vocabulary = JSON.parse(readFileSync(resolve(process.cwd(), 'public/vocabulary.json'), 'utf8')) as Array<{ word: string }>
+    const vocabulary = JSON.parse(readFileSync(resolve(process.cwd(), 'private/vocabulary.json'), 'utf8')) as Array<{ word: string }>
     const available = new Set(vocabulary.map((entry) => entry.word.toLowerCase()))
     const focusWords = ['orientation', 'symbiosis', 'precursor', 'permeable', 'layered', 'attenuate', 'salient', 'retrieval', 'simultaneous', 'legibility', 'topology', 'authentication', 'autonomous', 'additive', 'emulate', 'geothermal', 'membrane', 'runoff', 'incentive', 'aggregate']
     expect(focusWords.every((word) => available.has(word))).toBe(true)
@@ -66,4 +66,3 @@ describe('ETS-calibrated new topic bank', () => {
     expect(Math.max(...distribution) - Math.min(...distribution)).toBeLessThanOrEqual(2)
   })
 })
-

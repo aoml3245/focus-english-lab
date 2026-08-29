@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function privateGroupId() { return '7d74de6b-8269-4f6d-a218-37835ae0ff40'; }
+    function ownerUid() { return 'zXXioDJUMogbltI1YH9cFMthnsh1'; }
+    function signedIn() { return request.auth != null; }
+    function isMember(groupId) {
+      return signedIn() && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+    }
+    function isOwner(groupId) {
+      return signedIn() && get(/databases/$(database)/documents/groups/$(groupId)).data.ownerUid == request.auth.uid;
+    }
+
+    match /users/{userId}/{document=**} {
+      allow read, write: if signedIn() && request.auth.uid == userId;
+    }
+
+    match /groups/{groupId} {
+      allow get: if signedIn() && groupId == privateGroupId();
+      allow list: if false;
+      allow create: if signedIn()
+        && groupId == privateGroupId()
+        && request.auth.uid == ownerUid()
+        && request.resource.data.ownerUid == ownerUid()
+        && request.resource.data.partnerUid == null;
+      allow update: if groupId == privateGroupId() && (isOwner(groupId)
+        || (signedIn()
+          && resource.data.partnerUid == null
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.partnerUid == request.auth.uid
+          && request.resource.data.lastInviteId is string
+          && getAfter(/databases/$(database)/documents/invites/$(request.resource.data.lastInviteId)).data.usedBy == request.auth.uid));
+      allow delete: if false;
+
+      match /members/{userId} {
+        allow get: if groupId == privateGroupId() && signedIn() && (request.auth.uid == userId || isMember(groupId));
+        allow list: if groupId == privateGroupId() && isMember(groupId);
+        allow create: if groupId == privateGroupId() && signedIn() && request.auth.uid == userId
+          && (getAfter(/databases/$(database)/documents/groups/$(groupId)).data.ownerUid == request.auth.uid
+            || getAfter(/databases/$(database)/documents/groups/$(groupId)).data.partnerUid == request.auth.uid);
+        allow update: if signedIn() && request.auth.uid == userId;
+        allow delete: if isOwner(groupId) && userId != request.auth.uid;
+      }
+
+      match /state/{documentId} {
+        allow read, write: if groupId == privateGroupId() && isMember(groupId);
+      }
+
+      match /vocabularyChunks/{chunkId} {
+        allow read: if groupId == privateGroupId() && isMember(groupId);
+        allow create, update, delete: if groupId == privateGroupId() && isOwner(groupId);
+      }
+
+      match /vocabularyMeta/{documentId} {
+        allow read: if groupId == privateGroupId() && isMember(groupId);
+        allow create, update, delete: if groupId == privateGroupId() && isOwner(groupId);
+      }
+    }
+
+    match /invites/{inviteId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.groupId == privateGroupId()
+        && request.resource.data.createdBy == request.auth.uid
+        && isOwner(request.resource.data.groupId)
+        && get(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.partnerUid == null
+        && request.resource.data.usedBy == null;
+      allow update: if signedIn()
+        && resource.data.usedBy == null
+        && resource.data.expiresAt > request.time
+        && request.resource.data.groupId == resource.data.groupId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.expiresAt == resource.data.expiresAt
+        && request.resource.data.usedBy == request.auth.uid;
+      allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
+    }
+
+    match /{document=**} { allow read, write: if false; }
+  }
+}

@@ -34,9 +34,9 @@ HANGUL_RE = re.compile(r"[가-힣]")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", type=Path, default=Path("public/vocabulary.json"))
+    parser.add_argument("--input", type=Path, default=Path("private/vocabulary.json"))
     parser.add_argument("--wordnet", type=Path, default=Path("work/english-wordnet-2025"))
-    parser.add_argument("--output", type=Path, default=Path("public/vocabulary.json"))
+    parser.add_argument("--output", type=Path, default=Path("private/vocabulary.json"))
     parser.add_argument("--selection-cache", type=Path, default=Path("work/vocabulary/semantic-selection-v3.jsonl"))
     parser.add_argument("--draft-cache", type=Path, default=Path("work/vocabulary/semantic-draft-v3.jsonl"))
     parser.add_argument("--validation-cache", type=Path, default=Path("work/vocabulary/semantic-validation-v3.jsonl"))
