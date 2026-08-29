@@ -155,9 +155,9 @@ function formatDownloadBytes(bytes: number) {
 
 function VocabularyLoading({ progress }: { progress: VocabularyDownloadProgress | null }) {
   const percent = progress?.totalChunks ? Math.round(progress.completedChunks / progress.totalChunks * 100) : 0
-  const amount = progress ? `${formatDownloadBytes(progress.downloadedBytes)}${progress.totalBytes ? ` / ${formatDownloadBytes(progress.totalBytes)}` : ''}` : '0 B'
+  const amount = progress ? `${formatDownloadBytes(progress.downloadedBytes)} 새로 받음${progress.totalBytes ? ` · 전체 ${formatDownloadBytes(progress.totalBytes)}` : ''}` : '0 B 새로 받음'
   const title = progress?.phase === 'manifest' ? '단어장 다운로드 목록을 확인하고 있습니다.' : progress?.phase === 'processing' ? '받은 단어를 검색 가능한 목록으로 정리하고 있습니다.' : '비공개 단어장을 받고 있습니다.'
-  return <div className="vocab-download" role="status" aria-live="polite"><strong>{title}</strong><div className="vocab-download__meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div><div><span>{progress?.completedChunks || 0} / {progress?.totalChunks || '—'}개 조각</span><span>{amount} 받음</span></div><small>{(progress?.loadedEntries || 0).toLocaleString('ko-KR')}개 단어 불러옴</small></div>
+  return <div className="vocab-download" role="status" aria-live="polite"><strong>{title}</strong><div className="vocab-download__meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div><div><span>{progress?.completedChunks || 0} / {progress?.totalChunks || '—'}개 조각</span><span>{amount}</span></div><small>{(progress?.loadedEntries || 0).toLocaleString('ko-KR')}개 단어 불러옴 · 캐시 {progress?.cachedChunks || 0}개 재사용</small></div>
 }
 
 function SpeakerIcon({ stopped = false }: { stopped?: boolean }) {

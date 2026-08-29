@@ -4,6 +4,7 @@ import { Timestamp, deleteDoc, doc, getDoc, getFirestore, runTransaction, server
 import { createPersonalVocabularyBackup, importPersonalVocabularyBackup, type PersonalVocabularyBackup } from './personalVocabulary'
 import { notifyPrivateDataApplied } from './privateDataEvents'
 import { createSessionBackup, importSessionBackup, type SessionBackup } from './storage'
+import { hashVocabularyChunk, loadCachedVocabularyChunks, saveVocabularyChunks } from './vocabularyCache'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyB4crPyqOI9wkZszVg30tyax3qnVvX3Bv0',
@@ -49,6 +50,7 @@ export type VocabularyDownloadProgress = {
   downloadedBytes: number
   totalBytes?: number
   loadedEntries: number
+  cachedChunks: number
 }
 
 export function watchCloudUser(callback: (user: User | null) => void, onError?: (error: Error) => void) {
@@ -245,39 +247,62 @@ export async function fetchPrivateVocabulary(onProgress?: (progress: VocabularyD
   const access = await resolveCloudAccess(auth.currentUser)
   if (!access.authorized) throw new Error('이 계정에는 단어장 접근 권한이 없습니다.')
   const manifestRef = doc(db, 'groups', CLOUD_GROUP_ID, 'vocabularyMeta', 'manifest')
-  onProgress?.({ phase: 'manifest', completedChunks: 0, totalChunks: 0, downloadedBytes: 0, loadedEntries: 0 })
+  onProgress?.({ phase: 'manifest', completedChunks: 0, totalChunks: 0, downloadedBytes: 0, loadedEntries: 0, cachedChunks: 0 })
   const manifest = await getDoc(manifestRef)
   const manifestData = manifest.data()
   const totalChunks = Number(manifestData?.chunkCount || 0)
   const totalBytes = Number(manifestData?.totalBytes || 0) || undefined
+  const manifestHashes = Array.isArray(manifestData?.chunkHashes) && manifestData.chunkHashes.length === totalChunks ? manifestData.chunkHashes.map(String) : []
   if (!totalChunks) throw new Error('비공개 단어장이 아직 업로드되지 않았습니다. 소유자 설정에서 초기 업로드를 완료해 주세요.')
   const chunkEntries: unknown[][] = new Array(totalChunks)
   let nextIndex = 0
   let completedChunks = 0
   let downloadedBytes = 0
+  let cachedBytes = 0
   let loadedEntries = 0
+  let cachedChunks = 0
   const encoder = new TextEncoder()
-  onProgress?.({ phase: 'downloading', completedChunks, totalChunks, downloadedBytes, totalBytes, loadedEntries })
+  const cachedPayloads = manifestHashes.length ? await loadCachedVocabularyChunks(CLOUD_GROUP_ID, manifestHashes).catch(() => [] as Array<string | null>) : []
+  for (let index = 0; index < totalChunks; index += 1) {
+    const payload = cachedPayloads[index]
+    if (!payload) continue
+    try {
+      const parsed = JSON.parse(payload) as unknown[]
+      chunkEntries[index] = parsed
+      completedChunks += 1
+      cachedChunks += 1
+      cachedBytes += encoder.encode(payload).byteLength
+      loadedEntries += parsed.length
+    } catch { /* Corrupt cache entries are downloaded again. */ }
+  }
+  onProgress?.({ phase: 'downloading', completedChunks, totalChunks, downloadedBytes, totalBytes, loadedEntries, cachedChunks })
+  const downloadedChunks: Array<{ index: number; hash: string; payload: string }> = []
+  const pendingIndexes = Array.from({ length: totalChunks }, (_, index) => index).filter((index) => !chunkEntries[index])
   const worker = async () => {
-    while (nextIndex < totalChunks) {
-      const index = nextIndex
+    while (nextIndex < pendingIndexes.length) {
+      const index = pendingIndexes[nextIndex]
       nextIndex += 1
       const snapshot = await getDoc(doc(db, 'groups', CLOUD_GROUP_ID, 'vocabularyChunks', index.toString().padStart(4, '0')))
       if (!snapshot.exists()) throw new Error(`비공개 단어장 ${index + 1}번 조각을 찾지 못했습니다.`)
       const payload = String(snapshot.data().entries || '[]')
       const parsed = JSON.parse(payload) as unknown[]
       chunkEntries[index] = parsed
+      const hash = manifestHashes[index] || await hashVocabularyChunk(payload)
+      downloadedChunks.push({ index, hash, payload })
       completedChunks += 1
       downloadedBytes += encoder.encode(payload).byteLength
       loadedEntries += parsed.length
-      onProgress?.({ phase: 'downloading', completedChunks, totalChunks, downloadedBytes, totalBytes, loadedEntries })
+      onProgress?.({ phase: 'downloading', completedChunks, totalChunks, downloadedBytes, totalBytes, loadedEntries, cachedChunks })
     }
   }
-  await Promise.all(Array.from({ length: Math.min(4, totalChunks) }, () => worker()))
-  onProgress?.({ phase: 'processing', completedChunks, totalChunks, downloadedBytes, totalBytes: totalBytes || downloadedBytes, loadedEntries })
-  if (!totalBytes && access.owner) void setDoc(manifestRef, { totalBytes: downloadedBytes }, { merge: true }).catch(() => undefined)
+  await Promise.all(Array.from({ length: Math.min(4, pendingIndexes.length) }, () => worker()))
+  await saveVocabularyChunks(CLOUD_GROUP_ID, downloadedChunks).catch(() => undefined)
+  const resolvedHashes = manifestHashes.length ? manifestHashes : downloadedChunks.sort((a, b) => a.index - b.index).map((chunk) => chunk.hash)
+  const resolvedTotalBytes = totalBytes || cachedBytes + downloadedBytes
+  onProgress?.({ phase: 'processing', completedChunks, totalChunks, downloadedBytes, totalBytes: resolvedTotalBytes, loadedEntries, cachedChunks })
+  if ((!totalBytes || !manifestHashes.length) && access.owner) void setDoc(manifestRef, { totalBytes: resolvedTotalBytes, chunkHashes: resolvedHashes }, { merge: true }).catch(() => undefined)
   const entries = chunkEntries.flat()
-  onProgress?.({ phase: 'done', completedChunks, totalChunks, downloadedBytes, totalBytes: totalBytes || downloadedBytes, loadedEntries: entries.length })
+  onProgress?.({ phase: 'done', completedChunks, totalChunks, downloadedBytes, totalBytes: resolvedTotalBytes, loadedEntries: entries.length, cachedChunks })
   return new Blob([JSON.stringify(entries)], { type: 'application/json' })
 }
 
@@ -302,6 +327,7 @@ export async function uploadPrivateVocabulary(user: User, file: File) {
     currentBytes += bytes
   }
   if (current.length) chunks.push(JSON.stringify(current))
+  const chunkHashes = await Promise.all(chunks.map(hashVocabularyChunk))
   const { db } = services()
   const manifestRef = doc(db, 'groups', CLOUD_GROUP_ID, 'vocabularyMeta', 'manifest')
   const previous = await getDoc(manifestRef)
@@ -320,7 +346,7 @@ export async function uploadPrivateVocabulary(user: User, file: File) {
     await batch.commit()
   }
   const totalBytes = chunks.reduce((sum, payload) => sum + encoder.encode(payload).byteLength, 0)
-  await setDoc(manifestRef, { chunkCount: chunks.length, entryCount: entries.length, totalBytes, uploadedBy: user.uid, updatedAt: serverTimestamp(), schemaVersion: 1 })
+  await setDoc(manifestRef, { chunkCount: chunks.length, entryCount: entries.length, totalBytes, chunkHashes, uploadedBy: user.uid, updatedAt: serverTimestamp(), schemaVersion: 1 })
   return { entries: entries.length, chunks: chunks.length }
 }
 
