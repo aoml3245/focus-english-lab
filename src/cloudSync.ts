@@ -1,5 +1,5 @@
 import { getApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app'
-import { GoogleAuthProvider, getAuth, onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth'
+import { GoogleAuthProvider, getAuth, getRedirectResult, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut, type User } from 'firebase/auth'
 import { Timestamp, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, runTransaction, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore'
 import { createPersonalVocabularyBackup, importPersonalVocabularyBackup, type PersonalVocabularyBackup } from './personalVocabulary'
 import { notifyPrivateDataApplied } from './privateDataEvents'
@@ -16,6 +16,7 @@ const firebaseConfig = {
 export const CLOUD_OWNER_UID = import.meta.env.VITE_FIREBASE_OWNER_UID || 'zXXioDJUMogbltI1YH9cFMthnsh1'
 export const CLOUD_GROUP_ID = import.meta.env.VITE_FIREBASE_GROUP_ID || '7d74de6b-8269-4f6d-a218-37835ae0ff40'
 export const CLOUD_SYNC_CONFIGURED = Object.values(firebaseConfig).every(Boolean) && Boolean(CLOUD_GROUP_ID)
+export const CLOUD_APP_ORIGIN = 'https://focus-english-lab-3245.firebaseapp.com'
 
 let app: FirebaseApp | null = null
 let applyingRemote = false
@@ -33,18 +34,30 @@ export type CloudAccess = {
   partnerUid: string | null
 }
 
-export function watchCloudUser(callback: (user: User | null) => void) {
+export function watchCloudUser(callback: (user: User | null) => void, onError?: (error: Error) => void) {
   if (!CLOUD_SYNC_CONFIGURED) {
     callback(null)
     return () => undefined
   }
-  return onAuthStateChanged(services().auth, callback)
+  const auth = services().auth
+  void getRedirectResult(auth).catch((error) => onError?.(error instanceof Error ? error : new Error('로그인 결과를 확인하지 못했습니다.')))
+  return onAuthStateChanged(auth, callback, (error) => onError?.(error))
 }
 
 export async function signInToCloud() {
   const provider = new GoogleAuthProvider()
   provider.setCustomParameters({ prompt: 'select_account' })
-  return (await signInWithPopup(services().auth, provider)).user
+  if (import.meta.env.PROD && location.origin !== CLOUD_APP_ORIGIN) {
+    location.assign(`${CLOUD_APP_ORIGIN}/?login=1`)
+    return null
+  }
+  if (import.meta.env.PROD) {
+    await signInWithRedirect(services().auth, provider)
+    return null
+  }
+  const popup = signInWithPopup(services().auth, provider)
+  const timeout = new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('로그인 창이 열리지 않았습니다. 브라우저의 팝업 차단을 해제한 뒤 다시 시도해 주세요.')), 15_000))
+  return (await Promise.race([popup, timeout])).user
 }
 
 export async function signOutOfCloud() {

@@ -2,7 +2,7 @@
 
 2026년 1월 21일 이후 공개된 영어 능력시험의 과제 설명을 참고한 독립 연습용 웹 앱입니다. 모든 문제는 이 프로젝트를 위해 새로 작성했으며 공식·기출 문항이나 공식 채점 엔진을 포함하지 않습니다.
 
-현재 앱 버전은 **0.1.30**입니다. 정식 1.0 이전에는 `0.MINOR.PATCH` 형식을 사용하고, 배포되는 기능·동작 변경마다 최소 패치 버전을 올립니다. 앱의 **설정** 화면 맨 아래에서 현재 실행 중인 버전을 확인할 수 있습니다.
+현재 앱 버전은 **0.1.31**입니다. 정식 1.0 이전에는 `0.MINOR.PATCH` 형식을 사용하고, 배포되는 기능·동작 변경마다 최소 패치 버전을 올립니다. 앱의 **설정** 화면 맨 아래에서 현재 실행 중인 버전을 확인할 수 있습니다.
 
 ## 실행
 
@@ -19,7 +19,7 @@ npm run dev
 
 ## 웹 버전과 휴대용 시험 데이터
 
-GitHub Pages 배포 설정이 `.github/workflows/pages.yml`에 포함되어 있습니다. 저장소의 **Settings → Pages → Source**를 **GitHub Actions**로 한 번 지정하면 `main` 브랜치가 갱신될 때 `https://aoml3245.github.io/focus-english-lab/`에 자동 배포됩니다.
+GitHub Pages 배포 설정이 `.github/workflows/pages.yml`에 포함되어 있습니다. 저장소의 **Settings → Pages → Source**를 **GitHub Actions**로 한 번 지정하면 `main` 브랜치가 갱신될 때 `https://aoml3245.github.io/focus-english-lab/`에 자동 배포됩니다. 로그인은 iPhone의 팝업 제한과 브라우저의 서드파티 저장소 제한을 피하기 위해 같은 Firebase 프로젝트에서 호스팅하는 `https://focus-english-lab-3245.firebaseapp.com/`으로 이어진 뒤 전체 화면 Google 인증을 사용합니다.
 
 홈의 **시험 데이터** 화면에서는 다음 작업을 할 수 있습니다.
 

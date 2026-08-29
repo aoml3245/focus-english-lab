@@ -12,6 +12,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const [code, setCode] = useState('')
   const [message, setMessage] = useState('')
   const syncTimer = useRef<number | null>(null)
+  const autoLoginStarted = useRef(false)
 
   useEffect(() => watchCloudUser(async (nextUser) => {
     setUser(nextUser)
@@ -23,7 +24,18 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       if (nextAccess.authorized) await syncPrivateLearningData(nextUser)
     } catch (error) { setMessage(error instanceof Error ? error.message : '클라우드 연결을 확인하지 못했습니다.') }
     finally { setLoading(false) }
-  }), [])
+  }, (error) => { setMessage(error.message); setLoading(false); setBusy(false) }), [])
+
+  useEffect(() => {
+    if (loading || user || busy || autoLoginStarted.current) return
+    const url = new URL(location.href)
+    if (url.searchParams.get('login') !== '1') return
+    autoLoginStarted.current = true
+    url.searchParams.delete('login')
+    history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`)
+    setBusy(true)
+    void signInToCloud().catch((error) => setMessage(error instanceof Error ? error.message : '로그인하지 못했습니다.')).finally(() => setBusy(false))
+  }, [busy, loading, user])
 
   useEffect(() => {
     const schedule = () => {
