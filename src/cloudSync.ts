@@ -1,9 +1,9 @@
 import { getApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app'
 import { GoogleAuthProvider, getAuth, getRedirectResult, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut, type User } from 'firebase/auth'
 import { Timestamp, deleteDoc, doc, getDoc, getFirestore, runTransaction, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore'
-import { createPersonalVocabularyBackup, importPersonalVocabularyBackup, type PersonalVocabularyBackup } from './personalVocabulary'
+import { clearAllPersonalVocabularyData, createPersonalVocabularyBackup, importPersonalVocabularyBackup, type PersonalVocabularyBackup } from './personalVocabulary'
 import { notifyPrivateDataApplied } from './privateDataEvents'
-import { createSessionBackup, importSessionBackup, type SessionBackup } from './storage'
+import { clearAllSessionData, createSessionBackup, importSessionBackup, type SessionBackup } from './storage'
 import { hashVocabularyChunk, loadCachedVocabularyChunks, saveVocabularyChunks } from './vocabularyCache'
 
 const firebaseConfig = {
@@ -158,6 +158,23 @@ export async function removeSharingPartner(user: User) {
   return resolveCloudAccess(user)
 }
 
+export async function deleteAllPersonalLearningData(user: User) {
+  const access = await resolveCloudAccess(user)
+  if (!access.owner) throw new Error('전체 삭제는 그룹 소유자만 실행할 수 있습니다.')
+  if (access.partnerUid) throw new Error('연결된 사용자의 데이터를 보호하기 위해 공유 연결을 먼저 해제해야 합니다.')
+  const cleared = clearAllPersonalVocabularyData(false)
+  clearAllSessionData(false)
+  const deletedAt = new Date().toISOString()
+  localStorage.setItem(PERSONAL_DATA_DELETED_AT_KEY, deletedAt)
+  const { db } = services()
+  const batch = writeBatch(db)
+  batch.set(doc(db, 'users', user.uid, 'state', 'personalVocabulary'), { payload: checkedPayload(createPrivateCloudBackup()), updatedAt: serverTimestamp(), schemaVersion: 1, deletedAt })
+  batch.set(doc(db, 'groups', CLOUD_GROUP_ID, 'state', 'sharedVocabulary'), { payload: checkedPayload(sharedBackup()), updatedAt: serverTimestamp(), updatedBy: user.uid, schemaVersion: 1 })
+  await batch.commit()
+  notifyPrivateDataApplied()
+  return cleared
+}
+
 const parseBackup = (value: unknown) => {
   if (typeof value !== 'string') return null
   try {
@@ -176,13 +193,17 @@ type PrivateCloudBackup = {
   version: 1
   vocabulary: PersonalVocabularyBackup
   sessions: SessionBackup
+  deletedAt?: string
 }
+
+const PERSONAL_DATA_DELETED_AT_KEY = 'focus-english-lab:personal-data-deleted-at:v1'
 
 const createPrivateCloudBackup = (): PrivateCloudBackup => ({
   format: 'focus-english-private-cloud-backup',
   version: 1,
   vocabulary: createPersonalVocabularyBackup(),
   sessions: createSessionBackup(),
+  deletedAt: localStorage.getItem(PERSONAL_DATA_DELETED_AT_KEY) || undefined,
 })
 
 const parsePrivateCloudBackup = (value: unknown): PrivateCloudBackup | null => {
@@ -225,6 +246,12 @@ export async function syncPrivateLearningData(user: User, onProgress?: (progress
     const privateBackup = parsePrivateCloudBackup(remotePrivate.data()?.payload)
     const groupBackup = parseBackup(remoteShared.data()?.payload)
     if (privateBackup) {
+      const acknowledgedDeletion = localStorage.getItem(PERSONAL_DATA_DELETED_AT_KEY) || ''
+      if (privateBackup.deletedAt && privateBackup.deletedAt > acknowledgedDeletion) {
+        clearAllPersonalVocabularyData(false)
+        clearAllSessionData(false)
+        localStorage.setItem(PERSONAL_DATA_DELETED_AT_KEY, privateBackup.deletedAt)
+      }
       importPersonalVocabularyBackup(JSON.stringify(privateBackup.vocabulary), false)
       importSessionBackup(privateBackup.sessions, false)
     }

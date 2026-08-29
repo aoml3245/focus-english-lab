@@ -1,4 +1,4 @@
-import { FAVORITES_KEY, PERSONAL_WORDS_KEY, loadFavorites, loadPersonalWords, normalizeWord, type LearningEntry } from './learning'
+import { DELETED_PERSONAL_WORDS_KEY, FAVORITES_KEY, PERSONAL_WORDS_KEY, loadFavorites, loadPersonalWords, normalizeWord, type LearningEntry } from './learning'
 import { notifyPrivateDataChanged } from './privateDataEvents'
 
 export type PersonalWordStat = {
@@ -45,11 +45,69 @@ export type PersonalVocabularyBackup = {
   stats: Record<string, PersonalWordStat>
   activeBatch: DailyWordBatch | null
   sessions: VocabularySession[]
+  deletedWords?: Record<string, string>
 }
 
 const STATS_KEY = 'focus-english-lab:personal-vocabulary-stats:v1'
 const ACTIVE_BATCH_KEY = 'focus-english-lab:daily-word-batch:v1'
 const SESSIONS_KEY = 'focus-english-lab:vocabulary-sessions:v1'
+
+function withoutDeletedWords(batch: DailyWordBatch | null, deletedWords: Record<string, string>) {
+  if (!batch) return null
+  const entries = batch.entries.filter((entry) => !deletedWords[normalizeWord(entry.word)])
+  const allowed = new Set(entries.map((entry) => normalizeWord(entry.word)))
+  const queue = batch.queue.filter((id) => allowed.has(id.slice(0, id.lastIndexOf(':'))))
+  const retryTaskIds = batch.retryTaskIds.filter((id) => allowed.has(id.slice(0, id.lastIndexOf(':'))))
+  return entries.length ? { ...batch, entries, queue, retryTaskIds, position: Math.min(batch.position, Math.max(0, queue.length - 1)), complete: queue.length === 0 } : null
+}
+
+export function loadDeletedPersonalWords() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(DELETED_PERSONAL_WORDS_KEY) || '{}')
+    return stored && typeof stored === 'object' ? stored as Record<string, string> : {}
+  } catch { return {} }
+}
+
+export function removePersonalWordCompletely(value: string, notify = true) {
+  const word = normalizeWord(value)
+  const words = loadPersonalWords()
+  if (!word || !words.some((entry) => normalizeWord(entry.word) === word)) return false
+  const favorites = loadFavorites()
+  favorites.delete(word)
+  const stats = loadPersonalWordStats()
+  delete stats[word]
+  const deletedWords = loadDeletedPersonalWords()
+  deletedWords[word] = new Date().toISOString()
+  localStorage.setItem(PERSONAL_WORDS_KEY, JSON.stringify(words.filter((entry) => normalizeWord(entry.word) !== word)))
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favorites]))
+  localStorage.setItem(STATS_KEY, JSON.stringify(stats))
+  localStorage.setItem(DELETED_PERSONAL_WORDS_KEY, JSON.stringify(deletedWords))
+  const batch = loadActiveDailyBatch()
+  if (batch?.entries.some((entry) => normalizeWord(entry.word) === word)) {
+    const entries = batch.entries.filter((entry) => normalizeWord(entry.word) !== word)
+    const queue = batch.queue.filter((id) => !id.startsWith(`${word}:`))
+    const retryTaskIds = batch.retryTaskIds.filter((id) => !id.startsWith(`${word}:`))
+    if (entries.length) localStorage.setItem(ACTIVE_BATCH_KEY, JSON.stringify({ ...batch, entries, queue, retryTaskIds, position: Math.min(batch.position, Math.max(0, queue.length - 1)), complete: queue.length === 0 }))
+    else localStorage.removeItem(ACTIVE_BATCH_KEY)
+  }
+  if (notify) notifyPrivateDataChanged()
+  return true
+}
+
+export function clearAllPersonalVocabularyData(notify = true) {
+  const words = loadPersonalWords()
+  const deletedWords = loadDeletedPersonalWords()
+  const deletedAt = new Date().toISOString()
+  for (const entry of words) deletedWords[normalizeWord(entry.word)] = deletedAt
+  localStorage.removeItem(PERSONAL_WORDS_KEY)
+  localStorage.removeItem(FAVORITES_KEY)
+  localStorage.removeItem(STATS_KEY)
+  localStorage.removeItem(ACTIVE_BATCH_KEY)
+  localStorage.removeItem(SESSIONS_KEY)
+  localStorage.setItem(DELETED_PERSONAL_WORDS_KEY, JSON.stringify(deletedWords))
+  if (notify) notifyPrivateDataChanged()
+  return { words: words.length, tombstones: Object.keys(deletedWords).length }
+}
 
 const shuffle = <T,>(values: T[], random: () => number = Math.random) => {
   const next = [...values]
@@ -256,6 +314,7 @@ export function createPersonalVocabularyBackup(): PersonalVocabularyBackup {
     stats: loadPersonalWordStats(),
     activeBatch: loadActiveDailyBatch(),
     sessions: loadVocabularySessions(),
+    deletedWords: loadDeletedPersonalWords(),
   }
 }
 
@@ -276,14 +335,34 @@ export function importPersonalVocabularyBackup(text: string, notify = true) {
   const backup = JSON.parse(text) as PersonalVocabularyBackup
   if (backup?.format !== 'focus-english-personal-vocabulary' || backup.version !== 1 || !Array.isArray(backup.personalWords) || !Array.isArray(backup.favorites)) throw new Error('Focus English Lab 개인 단어장 백업 파일이 아닙니다.')
   const words = new Map(loadPersonalWords().map((entry) => [normalizeWord(entry.word), entry]))
-  for (const entry of backup.personalWords) if (entry?.word) words.set(normalizeWord(entry.word), { ...entry, word: normalizeWord(entry.word) })
+  const deletedWords = loadDeletedPersonalWords()
+  for (const [word, deletedAt] of Object.entries(backup.deletedWords || {})) {
+    const normalized = normalizeWord(word)
+    if (!deletedWords[normalized] || deletedWords[normalized] < deletedAt) deletedWords[normalized] = deletedAt
+  }
+  for (const entry of backup.personalWords) {
+    if (!entry?.word) continue
+    const normalized = normalizeWord(entry.word)
+    const current = words.get(normalized)
+    if (!current || (entry.savedAt || '') >= (current.savedAt || '')) words.set(normalized, { ...entry, word: normalized })
+  }
+  for (const [word, deletedAt] of Object.entries(deletedWords)) {
+    const savedAt = words.get(word)?.savedAt || ''
+    if (!savedAt || deletedAt >= savedAt) words.delete(word)
+    else delete deletedWords[word]
+  }
   const favorites = loadFavorites()
-  for (const word of backup.favorites) favorites.add(normalizeWord(word))
+  for (const word of backup.favorites) {
+    const normalized = normalizeWord(word)
+    if (!deletedWords[normalized]) favorites.add(normalized)
+  }
+  for (const word of Object.keys(deletedWords)) favorites.delete(word)
   for (const word of words.keys()) favorites.add(word)
   const currentStats = loadPersonalWordStats()
   const mergedStats = { ...currentStats }
   for (const [word, incoming] of Object.entries(backup.stats || {})) {
     const normalized = normalizeWord(word)
+    if (deletedWords[normalized]) continue
     const current = currentStats[normalized]
     mergedStats[normalized] = current ? {
       word: normalized,
@@ -294,13 +373,19 @@ export function importPersonalVocabularyBackup(text: string, notify = true) {
       masteredAt: current.masteredAt || incoming.masteredAt,
     } : { ...incoming, word: normalized }
   }
+  for (const word of Object.keys(deletedWords)) delete mergedStats[word]
   const sessions = new Map(loadVocabularySessions().map((session) => [session.id, session]))
   for (const session of backup.sessions || []) if (session?.id) sessions.set(session.id, session)
   localStorage.setItem(PERSONAL_WORDS_KEY, JSON.stringify([...words.values()]))
   localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favorites]))
   localStorage.setItem(STATS_KEY, JSON.stringify(mergedStats))
   localStorage.setItem(SESSIONS_KEY, JSON.stringify([...sessions.values()].sort((a, b) => b.completedAt.localeCompare(a.completedAt)).slice(0, 200)))
-  if (!loadActiveDailyBatch() && backup.activeBatch && !backup.activeBatch.complete) saveActiveDailyBatch(backup.activeBatch)
+  localStorage.setItem(DELETED_PERSONAL_WORDS_KEY, JSON.stringify(deletedWords))
+  const currentBatch = withoutDeletedWords(loadActiveDailyBatch(), deletedWords)
+  if (currentBatch) localStorage.setItem(ACTIVE_BATCH_KEY, JSON.stringify(currentBatch))
+  else localStorage.removeItem(ACTIVE_BATCH_KEY)
+  const incomingBatch = withoutDeletedWords(backup.activeBatch, deletedWords)
+  if (!currentBatch && incomingBatch && !incomingBatch.complete) localStorage.setItem(ACTIVE_BATCH_KEY, JSON.stringify(incomingBatch))
   if (notify) notifyPrivateDataChanged()
   return { words: words.size, sessions: sessions.size }
 }

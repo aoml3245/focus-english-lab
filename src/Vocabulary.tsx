@@ -1,7 +1,8 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowIcon, Brand } from './components'
-import { loadFavorites, loadPersonalWords, removePersonalWord, requestVocabulary, saveFavorites, type LearningEntry } from './learning'
+import { loadFavorites, loadPersonalWords, normalizeWord, requestVocabulary, saveFavorites, type LearningEntry } from './learning'
 import PersonalVocabularyWorkspace from './PersonalVocabularyWorkspace'
+import { removePersonalWordCompletely } from './personalVocabulary'
 import { loadVoiceProfileId, playTTS, prepareSpeech, stopTTS } from './tts'
 import type { VocabularyDownloadProgress } from './cloudSync'
 
@@ -48,6 +49,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
   useEffect(() => () => { audioRequest.current += 1; audioPreparation.current?.abort(); stopTTS() }, [])
   const topics = useMemo(() => [...new Set(vocabulary.flatMap((entry) => entry.topics))].sort((a, b) => a.localeCompare(b, 'ko')), [vocabulary])
   const academicCount = useMemo(() => vocabulary.reduce((count, entry) => count + (entry.academicCore ? 1 : 0), 0), [vocabulary])
+  const personalWords = useMemo(() => new Set(loadPersonalWords().map((entry) => normalizeWord(entry.word))), [libraryVersion, vocabulary])
 
   const filtered = useMemo(() => {
     const values = vocabulary.filter((entry) =>
@@ -120,10 +122,15 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
   const toggleFavorite = (word: string) => {
     setFavorites((current) => {
       const next = new Set(current)
-      if (next.has(word)) { next.delete(word); removePersonalWord(word) } else next.add(word)
+      if (next.has(word)) next.delete(word)
+      else next.add(word)
       saveFavorites(next)
       return next
     })
+  }
+  const deletePersonalWord = (word: string) => {
+    if (!window.confirm(`내가 추가한 "${word}" 단어와 이 단어의 암기 통계를 완전히 삭제할까요? 다른 기기에서도 삭제됩니다.`)) return
+    if (removePersonalWordCompletely(word)) setLibraryVersion((value) => value + 1)
   }
 
   return <div className="vocab-page">
@@ -141,7 +148,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
         <button className={savedOnly ? 'filter-toggle filter-toggle--active' : 'filter-toggle'} onClick={() => changeFilter(() => setSavedOnly((value) => !value))}>{savedOnly ? '내가 만든 단어장 보는 중' : '내가 만든 단어장'}</button>
       </section>
       <div className="vocab-result-head"><p><strong>{filtered.length.toLocaleString('en-US')}</strong>개 단어</p><span>{safePage + 1} / {pages} 페이지</span></div>
-      {loadError ? <div className="vocab-empty"><strong>{loadError}</strong><span>페이지를 새로고침해 다시 시도해 주세요.</span></div> : !vocabulary.length ? <VocabularyLoading progress={downloadProgress} /> : visible.length ? <section className="vocab-list" aria-label="단어 목록">{visible.map((entry) => <VocabularyCard key={entry.word} entry={entry} saved={favorites.has(entry.word)} audio={audio} onPlay={playVocabularyAudio} onToggle={() => toggleFavorite(entry.word)} />)}</section> : <div className="vocab-empty"><strong>조건에 맞는 단어가 없습니다.</strong><span>검색어나 필터를 바꿔 보세요.</span></div>}
+      {loadError ? <div className="vocab-empty"><strong>{loadError}</strong><span>페이지를 새로고침해 다시 시도해 주세요.</span></div> : !vocabulary.length ? <VocabularyLoading progress={downloadProgress} /> : visible.length ? <section className="vocab-list" aria-label="단어 목록">{visible.map((entry) => <VocabularyCard key={entry.word} entry={entry} saved={favorites.has(entry.word)} personal={personalWords.has(normalizeWord(entry.word))} audio={audio} onPlay={playVocabularyAudio} onToggle={() => toggleFavorite(entry.word)} onDelete={() => deletePersonalWord(entry.word)} />)}</section> : <div className="vocab-empty"><strong>조건에 맞는 단어가 없습니다.</strong><span>검색어나 필터를 바꿔 보세요.</span></div>}
       {pages > 1 && <nav className="vocab-pagination" aria-label="단어장 페이지"><button disabled={safePage === 0} onClick={() => { stopVocabularyAudio(); setPage(Math.max(0, safePage - 1)) }}><ArrowIcon direction="left" /> 이전</button><span>{safePage + 1} / {pages}</span><button disabled={safePage === pages - 1} onClick={() => { stopVocabularyAudio(); setPage(Math.min(pages - 1, safePage + 1)) }}>다음 <ArrowIcon /></button></nav>}
       <p className="vocab-attribution">학술 핵심 기준: 앱 문항 빈도 또는 B2–C2 난이도와 공개 사전 빈도<br />어휘 정보: <a href="https://github.com/jhseo1211/open-english-korean-dict" target="_blank" rel="noreferrer">Open English–Korean Dictionary</a> · <a href="https://en-word.net/downloads" target="_blank" rel="noreferrer">Open English WordNet 2025</a></p>
     </main>
@@ -176,12 +183,12 @@ function VocabularyAudioButton({ label, accessibleLabel, state, onClick }: { lab
   return <div className="vocab-audio-control"><button className={busy ? 'vocab-audio-button vocab-audio-button--active' : 'vocab-audio-button'} aria-label={`${accessibleLabel} ${buttonLabel}`} aria-pressed={state?.phase === 'playing'} disabled={state?.phase === 'preparing'} onClick={onClick}><SpeakerIcon stopped={state?.phase === 'playing'} /><span>{buttonLabel}</span></button>{state && <small className={state.phase === 'error' ? 'vocab-audio-status vocab-audio-status--error' : 'vocab-audio-status'} aria-live="polite">{state.status}</small>}</div>
 }
 
-function VocabularyCard({ entry, saved, audio, onPlay, onToggle }: { entry: LearningEntry; saved: boolean; audio: VocabularyAudioState | null; onPlay: (key: string, text: string) => void; onToggle: () => void }) {
+function VocabularyCard({ entry, saved, personal, audio, onPlay, onToggle, onDelete }: { entry: LearningEntry; saved: boolean; personal: boolean; audio: VocabularyAudioState | null; onPlay: (key: string, text: string) => void; onToggle: () => void; onDelete: () => void }) {
   const wordKey = `${entry.word}:word`
   const exampleKey = `${entry.word}:example`
   const meanings = entry.meanings?.length ? entry.meanings : [{ senseId: `${entry.word}:primary`, meaningKo: entry.dictionaryMeaningKo || entry.meaningKo, meaningEn: entry.meaningEn, partOfSpeech: entry.partOfSpeech, synonyms: entry.synonyms }]
   return <article className="vocab-card">
-    <div className="vocab-word"><div className="vocab-term"><h2>{entry.word}</h2>{entry.ipa && <span>{entry.ipa}</span>}<VocabularyAudioButton label="단어 듣기" accessibleLabel={entry.word} state={audio?.key === wordKey ? audio : null} onClick={() => onPlay(wordKey, entry.word)} /></div><div><span>{entry.partOfSpeech}</span><span>{entry.cefr}</span>{entry.academicCore && <span className="academic-badge">학술 핵심</span>}<button className={saved ? 'save-word save-word--active' : 'save-word'} onClick={onToggle}>{saved ? '저장됨' : '저장'}</button></div></div>
+    <div className="vocab-word"><div className="vocab-term"><h2>{entry.word}</h2>{entry.ipa && <span>{entry.ipa}</span>}<VocabularyAudioButton label="단어 듣기" accessibleLabel={entry.word} state={audio?.key === wordKey ? audio : null} onClick={() => onPlay(wordKey, entry.word)} /></div><div><span>{entry.partOfSpeech}</span><span>{entry.cefr}</span>{entry.academicCore && <span className="academic-badge">학술 핵심</span>}<button className={saved ? 'save-word save-word--active' : 'save-word'} onClick={onToggle}>{saved ? '저장됨' : '저장'}</button>{personal && <button className="delete-personal-word" onClick={onDelete}>내 단어 삭제</button>}</div></div>
     <div className="vocab-meanings">{entry.personalMeaningKo && entry.dictionaryMeaningKo && <div className="vocab-meaning-compare"><div><small>내가 입력한 뜻</small><strong>{entry.personalMeaningKo}</strong></div><div><small>기존 단어장 뜻</small><strong>{entry.dictionaryMeaningKo}</strong></div></div>}<ol>{meanings.map((sense, index) => <li key={sense.senseId}><div><span>{index + 1}</span><em>{sense.partOfSpeech}</em>{index === 0 && <small>대표·문맥 뜻</small>}</div><strong>{sense.meaningKo}</strong><p>{sense.meaningEn}</p>{sense.synonyms.length > 0 && <div className="vocab-sense-synonyms">{sense.synonyms.map((synonym) => <em key={synonym}>{synonym}</em>)}</div>}</li>)}</ol></div>
     <blockquote><VocabularyAudioButton label="예문 듣기" accessibleLabel={entry.word} state={audio?.key === exampleKey ? audio : null} onClick={() => onPlay(exampleKey, entry.example)} /><p>{entry.example}</p><footer>{entry.translation || '해석 생성 중'}</footer></blockquote>
     <div className="vocab-meta"><span>{entry.source === 'local-llm' ? '로컬 LLM 문맥 정리' : entry.source === 'dictionary' && entry.frequencyRank ? `영어 사용 빈도 ${entry.frequencyRank.toLocaleString('en-US')}위` : `문항에서 ${entry.frequency}회`}</span><span>{entry.topics.join(' · ')}</span></div>

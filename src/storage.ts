@@ -68,6 +68,14 @@ export function importSessionBackup(backup: SessionBackup, notify = true) {
   if (notify) notifyPrivateDataChanged()
 }
 
+export function clearAllSessionData(notify = true) {
+  localStorage.removeItem(ACTIVE_KEY)
+  localStorage.removeItem(HISTORY_KEY)
+  localStorage.removeItem(LEGACY_ACTIVE_KEY)
+  localStorage.removeItem(LEGACY_HISTORY_KEY)
+  if (notify) notifyPrivateDataChanged()
+}
+
 export function loadExcludedItemIds() {
   const excluded = new Set<string>()
   for (const session of loadHistory()) {

@@ -39,6 +39,7 @@ export type LocalLlmConfig = {
 
 export const FAVORITES_KEY = 'focus-english-lab:vocabulary-favorites:v1'
 export const PERSONAL_WORDS_KEY = 'focus-english-lab:personal-vocabulary:v1'
+export const DELETED_PERSONAL_WORDS_KEY = 'focus-english-lab:deleted-personal-words:v1'
 const LLM_CONFIG_KEY = 'focus-english-lab:local-llm:v1'
 const DEFAULT_CONFIG: LocalLlmConfig = { endpoint: 'http://127.0.0.1:11434', model: 'translategemma:latest' }
 
@@ -83,7 +84,13 @@ export function savePersonalWord(entry: LearningEntry) {
   const word = normalizeWord(entry.word)
   const current = loadPersonalWords()
   const next = [{ ...entry, word, savedAt: new Date().toISOString() }, ...current.filter((item) => normalizeWord(item.word) !== word)]
-  try { localStorage.setItem(PERSONAL_WORDS_KEY, JSON.stringify(next)); notifyPrivateDataChanged() } catch { /* storage can be disabled */ }
+  try {
+    localStorage.setItem(PERSONAL_WORDS_KEY, JSON.stringify(next))
+    const deleted = JSON.parse(localStorage.getItem(DELETED_PERSONAL_WORDS_KEY) || '{}') as Record<string, string>
+    delete deleted[word]
+    localStorage.setItem(DELETED_PERSONAL_WORDS_KEY, JSON.stringify(deleted))
+    notifyPrivateDataChanged()
+  } catch { /* storage can be disabled */ }
   const favorites = loadFavorites()
   favorites.add(word)
   saveFavorites(favorites)

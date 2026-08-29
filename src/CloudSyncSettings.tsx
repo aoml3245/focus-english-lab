@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { CLOUD_SYNC_CONFIGURED, createSharingCode, deleteUnusedInvite, removeSharingPartner, resolveCloudAccess, signOutOfCloud, syncPrivateLearningData, uploadPrivateVocabulary, watchCloudUser, type CloudAccess } from './cloudSync'
+import { CLOUD_SYNC_CONFIGURED, createSharingCode, deleteAllPersonalLearningData, deleteUnusedInvite, removeSharingPartner, resolveCloudAccess, signOutOfCloud, syncPrivateLearningData, uploadPrivateVocabulary, watchCloudUser, type CloudAccess } from './cloudSync'
 
 export default function CloudSyncSettings() {
   const [user, setUser] = useState<User | null>(null)
@@ -31,5 +31,6 @@ export default function CloudSyncSettings() {
       <button className="text-button" disabled={busy} onClick={() => void signOutOfCloud()}>로그아웃</button>
     </div>
     <p className="settings-status" role="status" aria-live="polite">{message}</p>
+    {access.owner && <div className="cloud-danger"><div><strong>개인 학습 데이터 완전 삭제</strong><p>내가 추가한 단어, 즐겨찾기, 암기 통계, 단어 학습 기록과 시험 기록을 이 기기와 Firebase에서 삭제합니다. 기본 비공개 단어장은 유지됩니다.</p>{access.partnerUid && <small>두 사용자 연결 중에는 상대방 데이터를 보호하기 위해 실행할 수 없습니다.</small>}</div><button className="button button--danger" disabled={busy || Boolean(access.partnerUid)} onClick={() => { const confirmation = window.prompt('복구할 수 없습니다. 계속하려면 "개인 데이터 삭제"를 정확히 입력하세요.'); if (confirmation !== '개인 데이터 삭제') { if (confirmation !== null) setMessage('확인 문구가 일치하지 않아 삭제하지 않았습니다.'); return } void run(async () => { const result = await deleteAllPersonalLearningData(user); setMessage(`${result.words}개 추가 단어와 관련 개인 데이터를 완전히 삭제했습니다.`); window.setTimeout(() => window.location.reload(), 900) }) }}>개인 데이터 완전 삭제</button></div>}
   </div>
 }

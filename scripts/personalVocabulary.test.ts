@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import type { LearningEntry } from '../src/learning'
-import { advanceDailyWordBatch, attachPersonalMeaning, createDailyWordBatch, currentDailyTask, findVocabularyMatches, parseDailyWordLines, selectBalancedPersonalReview, type PersonalWordStat } from '../src/personalVocabulary'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { DELETED_PERSONAL_WORDS_KEY, FAVORITES_KEY, PERSONAL_WORDS_KEY, type LearningEntry } from '../src/learning'
+import { advanceDailyWordBatch, attachPersonalMeaning, createDailyWordBatch, createPersonalVocabularyBackup, currentDailyTask, findVocabularyMatches, importPersonalVocabularyBackup, parseDailyWordLines, removePersonalWordCompletely, selectBalancedPersonalReview, type PersonalWordStat } from '../src/personalVocabulary'
 
 const entry = (word: string): LearningEntry => ({
   word,
@@ -17,6 +17,14 @@ const entry = (word: string): LearningEntry => ({
 })
 
 describe('personal vocabulary workflow', () => {
+  beforeEach(() => {
+    const values = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value) },
+      removeItem: (key: string) => { values.delete(key) },
+    })
+  })
   it('parses common pasted word-list separators and removes duplicates', () => {
     expect(parseDailyWordLines('abandon, 버리다\ncoherent\t일관된\nabandon - 포기하다\ninvalid')).toEqual([
       { word: 'abandon', meaningKo: '포기하다' },
@@ -65,5 +73,22 @@ describe('personal vocabulary workflow', () => {
     expect(new Set(selected.entries.map((item) => item.word)).size).toBe(100)
     expect(selected.difficultCount).toBe(50)
     expect(selected.stableCount).toBe(50)
+  })
+
+  it('deletes a personal word, its favorite, and records a sync tombstone', () => {
+    localStorage.setItem(PERSONAL_WORDS_KEY, JSON.stringify([{ ...entry('alpha'), savedAt: '2026-08-29T00:00:00.000Z' }]))
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(['alpha']))
+    expect(removePersonalWordCompletely('alpha', false)).toBe(true)
+    const backup = createPersonalVocabularyBackup()
+    expect(backup.personalWords).toEqual([])
+    expect(backup.favorites).toEqual([])
+    expect(backup.deletedWords?.alpha).toBeTruthy()
+  })
+
+  it('keeps a deleted word removed when an older device backup is merged', () => {
+    localStorage.setItem(DELETED_PERSONAL_WORDS_KEY, JSON.stringify({ alpha: '2026-08-30T00:00:00.000Z' }))
+    const stale = { format: 'focus-english-personal-vocabulary' as const, version: 1 as const, exportedAt: '2026-08-29T00:00:00.000Z', personalWords: [{ ...entry('alpha'), savedAt: '2026-08-29T00:00:00.000Z' }], favorites: ['alpha'], stats: {}, activeBatch: null, sessions: [] }
+    importPersonalVocabularyBackup(JSON.stringify(stale), false)
+    expect(createPersonalVocabularyBackup().personalWords).toEqual([])
   })
 })
