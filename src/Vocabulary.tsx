@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowIcon, Brand } from './components'
 import { loadFavorites, loadPersonalWords, removePersonalWord, requestVocabulary, saveFavorites, type LearningEntry } from './learning'
+import PersonalVocabularyWorkspace from './PersonalVocabularyWorkspace'
 import { loadVoiceProfileId, playTTS, prepareSpeech, stopTTS } from './tts'
 
 type IndexedEntry = LearningEntry & { searchText: string }
@@ -11,6 +12,7 @@ const LEVEL_WEIGHT: Record<string, number> = { A1: 1, A2: 2, B1: 3, B2: 4, C1: 5
 
 export default function Vocabulary({ onBack }: { onBack: () => void }) {
   const [vocabulary, setVocabulary] = useState<IndexedEntry[]>([])
+  const [dictionaryVocabulary, setDictionaryVocabulary] = useState<LearningEntry[]>([])
   const [loadError, setLoadError] = useState('')
   const [query, setQuery] = useState('')
   const deferredQuery = useDeferredValue(query.trim().toLowerCase())
@@ -21,6 +23,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
   const [sort, setSort] = useState<'academic' | 'frequency' | 'alphabetical'>('academic')
   const [page, setPage] = useState(0)
   const [favorites, setFavorites] = useState(loadFavorites)
+  const [libraryVersion, setLibraryVersion] = useState(0)
   const [audio, setAudio] = useState<VocabularyAudioState | null>(null)
   const audioRequest = useRef(0)
   const audioPreparation = useRef<AbortController | null>(null)
@@ -28,15 +31,17 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
     let active = true
     requestVocabulary().then((entries) => {
       if (!active) return
+      setDictionaryVocabulary(entries)
       const merged = new Map(entries.map((entry) => [entry.word, entry]))
       for (const personal of loadPersonalWords()) {
         const base = merged.get(personal.word)
         merged.set(personal.word, { ...base, ...personal, frequency: base?.frequency || personal.frequency, topics: [...new Set([...(personal.topics || []), ...(base?.topics || [])])] })
       }
       setVocabulary([...merged.values()].map((entry) => ({ ...entry, searchText: [entry.word, entry.meaningKo, entry.meaningEn, ...entry.synonyms, ...entry.topics, ...(entry.meanings || []).flatMap((sense) => [sense.meaningKo, sense.meaningEn, ...sense.synonyms])].join(' ').toLowerCase() })))
+      setFavorites(loadFavorites())
     }).catch((error: unknown) => { if (active) setLoadError(error instanceof Error ? error.message : '단어장 데이터를 불러오지 못했습니다.') })
     return () => { active = false }
-  }, [])
+  }, [libraryVersion])
   useEffect(() => () => { audioRequest.current += 1; audioPreparation.current?.abort(); stopTTS() }, [])
   const topics = useMemo(() => [...new Set(vocabulary.flatMap((entry) => entry.topics))].sort((a, b) => a.localeCompare(b, 'ko')), [vocabulary])
   const academicCount = useMemo(() => vocabulary.reduce((count, entry) => count + (entry.academicCore ? 1 : 0), 0), [vocabulary])
@@ -122,6 +127,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
     <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header>
     <main>
       <div className="vocab-hero"><div><h1>문장으로 익히는 단어장</h1><p>문제은행의 문맥 어휘와 공개 사전에서 품질 조건을 통과한 약 3만 개를 한곳에 정리했습니다. 단어와 예문은 음성 설정에서 고른 목소리로 들을 수 있습니다.</p></div><dl><div><dt>전체 어휘</dt><dd>{vocabulary.length ? vocabulary.length.toLocaleString('en-US') : '—'}</dd></div><div><dt>학술 핵심</dt><dd>{vocabulary.length ? academicCount.toLocaleString('en-US') : '—'}</dd></div><div><dt>저장한 단어</dt><dd>{favorites.size.toLocaleString('en-US')}</dd></div></dl></div>
+      <PersonalVocabularyWorkspace vocabulary={dictionaryVocabulary} onLibraryChanged={() => setLibraryVersion((value) => value + 1)} />
       <section className="vocab-controls" aria-label="단어장 검색과 필터">
         <label className="vocab-search"><span>단어 검색</span><input type="search" value={query} onChange={(event) => changeFilter(() => setQuery(event.target.value))} placeholder="영어 단어, 한국어 뜻, 동의어 검색" /></label>
         <label><span>난이도</span><select value={level} onChange={(event) => changeFilter(() => setLevel(event.target.value))}>{LEVELS.map((value) => <option key={value} value={value}>{value === 'All' ? '전체' : value}</option>)}</select></label>
@@ -152,10 +158,10 @@ function VocabularyAudioButton({ label, accessibleLabel, state, onClick }: { lab
 function VocabularyCard({ entry, saved, audio, onPlay, onToggle }: { entry: LearningEntry; saved: boolean; audio: VocabularyAudioState | null; onPlay: (key: string, text: string) => void; onToggle: () => void }) {
   const wordKey = `${entry.word}:word`
   const exampleKey = `${entry.word}:example`
-  const meanings = entry.meanings?.length ? entry.meanings : [{ senseId: `${entry.word}:primary`, meaningKo: entry.meaningKo, meaningEn: entry.meaningEn, partOfSpeech: entry.partOfSpeech, synonyms: entry.synonyms }]
+  const meanings = entry.meanings?.length ? entry.meanings : [{ senseId: `${entry.word}:primary`, meaningKo: entry.dictionaryMeaningKo || entry.meaningKo, meaningEn: entry.meaningEn, partOfSpeech: entry.partOfSpeech, synonyms: entry.synonyms }]
   return <article className="vocab-card">
     <div className="vocab-word"><div className="vocab-term"><h2>{entry.word}</h2>{entry.ipa && <span>{entry.ipa}</span>}<VocabularyAudioButton label="단어 듣기" accessibleLabel={entry.word} state={audio?.key === wordKey ? audio : null} onClick={() => onPlay(wordKey, entry.word)} /></div><div><span>{entry.partOfSpeech}</span><span>{entry.cefr}</span>{entry.academicCore && <span className="academic-badge">학술 핵심</span>}<button className={saved ? 'save-word save-word--active' : 'save-word'} onClick={onToggle}>{saved ? '저장됨' : '저장'}</button></div></div>
-    <div className="vocab-meanings"><ol>{meanings.map((sense, index) => <li key={sense.senseId}><div><span>{index + 1}</span><em>{sense.partOfSpeech}</em>{index === 0 && <small>대표·문맥 뜻</small>}</div><strong>{sense.meaningKo}</strong><p>{sense.meaningEn}</p>{sense.synonyms.length > 0 && <div className="vocab-sense-synonyms">{sense.synonyms.map((synonym) => <em key={synonym}>{synonym}</em>)}</div>}</li>)}</ol></div>
+    <div className="vocab-meanings">{entry.personalMeaningKo && entry.dictionaryMeaningKo && <div className="vocab-meaning-compare"><div><small>내가 입력한 뜻</small><strong>{entry.personalMeaningKo}</strong></div><div><small>기존 단어장 뜻</small><strong>{entry.dictionaryMeaningKo}</strong></div></div>}<ol>{meanings.map((sense, index) => <li key={sense.senseId}><div><span>{index + 1}</span><em>{sense.partOfSpeech}</em>{index === 0 && <small>대표·문맥 뜻</small>}</div><strong>{sense.meaningKo}</strong><p>{sense.meaningEn}</p>{sense.synonyms.length > 0 && <div className="vocab-sense-synonyms">{sense.synonyms.map((synonym) => <em key={synonym}>{synonym}</em>)}</div>}</li>)}</ol></div>
     <blockquote><VocabularyAudioButton label="예문 듣기" accessibleLabel={entry.word} state={audio?.key === exampleKey ? audio : null} onClick={() => onPlay(exampleKey, entry.example)} /><p>{entry.example}</p><footer>{entry.translation || '해석 생성 중'}</footer></blockquote>
     <div className="vocab-meta"><span>{entry.source === 'local-llm' ? '로컬 LLM 문맥 정리' : entry.source === 'dictionary' && entry.frequencyRank ? `영어 사용 빈도 ${entry.frequencyRank.toLocaleString('en-US')}위` : `문항에서 ${entry.frequency}회`}</span><span>{entry.topics.join(' · ')}</span></div>
   </article>

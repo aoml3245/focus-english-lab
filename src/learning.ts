@@ -9,6 +9,8 @@ export type LearningSense = {
 export type LearningEntry = {
   word: string
   meaningKo: string
+  personalMeaningKo?: string
+  dictionaryMeaningKo?: string
   meaningEn: string
   partOfSpeech: string
   cefr: string

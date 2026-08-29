@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowIcon, Brand } from './components'
-import { loadFavorites, requestVocabulary, type LearningEntry } from './learning'
+import { loadFavorites, loadPersonalWords, requestVocabulary, type LearningEntry } from './learning'
 import MasteryCourse from './MasteryCourse'
+import { downloadPersonalVocabularyBackup, loadPersonalWordStats, recordPersonalWordAttempt, saveVocabularySession, selectBalancedPersonalReview } from './personalVocabulary'
 import { evaluateStudyAnswer, type StudyAnswerFeedback } from './studyGameCoach'
-import { buildStudyQuestions, createMasteryProgress, isObjectiveAnswerCorrect, selectStudyEntries, type MasteryProgress, type StudyGame, type StudyQuestion } from './studyGamesEngine'
+import { buildStudyQuestions, createMasteryProgress, isObjectiveAnswerCorrect, masteryMinimumAttempts, selectStudyEntries, type MasteryProgress, type StudyGame, type StudyQuestion } from './studyGamesEngine'
 
 const LEVELS = ['All', 'B1', 'B2', 'C1', 'C2']
 const SIZES = [10, 20, 30]
 const MEMORIZATION_SIZE = 100
 const MASTERY_STORAGE_KEY = 'focus-english-lab:mastery-course:v1'
 
-type SavedMasteryCourse = { version: 1; deck: LearningEntry[]; progress: MasteryProgress | null; view: 'memorize' | 'mastery'; deckPage: number }
+type SavedMasteryCourse = { version: 1; deck: LearningEntry[]; progress: MasteryProgress | null; view: 'memorize' | 'mastery'; deckPage: number; startedAt?: string; personalReview?: boolean }
 
 function loadSavedMasteryCourse(): SavedMasteryCourse | null {
   try {
@@ -37,12 +38,15 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
   const [level, setLevel] = useState('B2')
   const [size, setSize] = useState(10)
   const [academicOnly, setAcademicOnly] = useState(true)
-  const [savedOnly, setSavedOnly] = useState(false)
+  const [scope, setScope] = useState<'all' | 'saved' | 'balanced'>('all')
   const [questions, setQuestions] = useState<StudyQuestion[]>([])
   const [studyDeck, setStudyDeck] = useState<LearningEntry[]>(() => savedCourse?.deck || [])
   const [memorizing, setMemorizing] = useState(() => savedCourse?.view === 'memorize')
   const [mastery, setMastery] = useState<MasteryProgress | null>(() => savedCourse?.progress || null)
   const [deckPage, setDeckPage] = useState(() => savedCourse?.deckPage || 0)
+  const [masteryStartedAt, setMasteryStartedAt] = useState(() => savedCourse?.startedAt || '')
+  const [personalReview, setPersonalReview] = useState(() => Boolean(savedCourse?.personalReview))
+  const [selectionNote, setSelectionNote] = useState('')
   const [index, setIndex] = useState(0)
   const [response, setResponse] = useState('')
   const [revealed, setRevealed] = useState(false)
@@ -56,36 +60,50 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     let active = true
-    requestVocabulary().then((entries) => { if (active) setVocabulary(entries) }).catch((cause: unknown) => { if (active) setLoadError(cause instanceof Error ? cause.message : '단어 데이터를 불러오지 못했습니다.') })
+    requestVocabulary().then((entries) => {
+      if (!active) return
+      const merged = new Map(entries.map((entry) => [entry.word, entry]))
+      for (const personal of loadPersonalWords()) merged.set(personal.word, { ...merged.get(personal.word), ...personal })
+      setVocabulary([...merged.values()])
+    }).catch((cause: unknown) => { if (active) setLoadError(cause instanceof Error ? cause.message : '단어 데이터를 불러오지 못했습니다.') })
     return () => { active = false; evaluationRequest.current += 1 }
   }, [])
 
   useEffect(() => {
     try {
       if (!studyDeck.length || (!memorizing && !mastery)) localStorage.removeItem(MASTERY_STORAGE_KEY)
-      else localStorage.setItem(MASTERY_STORAGE_KEY, JSON.stringify({ version: 1, deck: studyDeck, progress: mastery, view: mastery ? 'mastery' : 'memorize', deckPage } satisfies SavedMasteryCourse))
+      else localStorage.setItem(MASTERY_STORAGE_KEY, JSON.stringify({ version: 1, deck: studyDeck, progress: mastery, view: mastery ? 'mastery' : 'memorize', deckPage, startedAt: masteryStartedAt, personalReview } satisfies SavedMasteryCourse))
     } catch { /* storage can be disabled */ }
-  }, [deckPage, mastery, memorizing, studyDeck])
+  }, [deckPage, mastery, masteryStartedAt, memorizing, personalReview, studyDeck])
 
   const available = useMemo(() => vocabulary.filter((entry) =>
-    (level === 'All' || entry.cefr === level) &&
-    (!academicOnly || Boolean(entry.academicCore)) &&
-    (!savedOnly || favorites.has(entry.word)) &&
+    (scope !== 'all' || level === 'All' || entry.cefr === level) &&
+    (scope !== 'all' || !academicOnly || Boolean(entry.academicCore)) &&
+    (scope === 'all' || favorites.has(entry.word)) &&
     (game === 'vocabulary' || entry.source === 'corpus'),
-  ).length, [academicOnly, favorites, game, level, savedOnly, vocabulary])
+  ).length, [academicOnly, favorites, game, level, scope, vocabulary])
 
   const resetAnswer = () => { evaluationRequest.current += 1; setResponse(''); setRevealed(false); setJudgment(null); setEvaluating(false); setFeedback(null); setFeedbackError('') }
   const start = () => {
-    const next = buildStudyQuestions(vocabulary, game, size, { level, academicOnly, savedWords: savedOnly ? favorites : undefined })
+    const next = buildStudyQuestions(vocabulary, game, size, { level: scope === 'all' ? level : 'All', academicOnly: scope === 'all' && academicOnly, savedWords: scope === 'all' ? undefined : favorites })
     setStudyDeck([]); setMemorizing(false); setMastery(null); setQuestions(next); setIndex(0); setCorrect(0); resetAnswer()
   }
   const startMemorizing = () => {
-    const deck = selectStudyEntries(vocabulary, MEMORIZATION_SIZE, { level, academicOnly, savedWords: savedOnly ? favorites : undefined })
-    setStudyDeck(deck); setMemorizing(true); setMastery(null); setDeckPage(0); setQuestions([]); setIndex(0); setCorrect(0); resetAnswer()
+    const personalEntries = vocabulary.filter((entry) => favorites.has(entry.word))
+    const balanced = scope === 'balanced' ? selectBalancedPersonalReview(personalEntries, loadPersonalWordStats(), MEMORIZATION_SIZE) : null
+    const deck = balanced?.entries || selectStudyEntries(vocabulary, MEMORIZATION_SIZE, { level: scope === 'all' ? level : 'All', academicOnly: scope === 'all' && academicOnly, savedWords: scope === 'all' ? undefined : favorites })
+    setSelectionNote(balanced ? `오답 집중 ${balanced.difficultCount}개 + 안정 복습 ${balanced.stableCount}개를 섞었습니다.` : '')
+    setMasteryStartedAt(new Date().toISOString()); setPersonalReview(scope !== 'all'); setStudyDeck(deck); setMemorizing(true); setMastery(null); setDeckPage(0); setQuestions([]); setIndex(0); setCorrect(0); resetAnswer()
   }
   const startMastery = () => { setMemorizing(false); setMastery(createMasteryProgress(studyDeck)); setDeckPage(0); setQuestions([]); resetAnswer() }
   const repeatDeckStudy = () => { setMastery(null); setMemorizing(true); setDeckPage(0); setQuestions([]); resetAnswer() }
-  const restartSetup = () => { setStudyDeck([]); setMemorizing(false); setMastery(null); setDeckPage(0); setQuestions([]); setIndex(0); setCorrect(0); resetAnswer() }
+  const restartSetup = () => { setStudyDeck([]); setMemorizing(false); setMastery(null); setDeckPage(0); setMasteryStartedAt(''); setPersonalReview(false); setSelectionNote(''); setQuestions([]); setIndex(0); setCorrect(0); resetAnswer() }
+  const finishPersonalMastery = (progress: MasteryProgress) => {
+    if (!personalReview) return
+    const minimumCorrect = masteryMinimumAttempts(studyDeck.length)
+    saveVocabularySession({ id: crypto.randomUUID(), kind: 'personal-review', startedAt: masteryStartedAt || new Date().toISOString(), completedAt: new Date().toISOString(), wordCount: studyDeck.length, attempts: progress.totalAttempts, correct: minimumCorrect, incorrect: Math.max(0, progress.totalAttempts - minimumCorrect) })
+    window.setTimeout(() => { if (window.confirm('100단어 복습 결과와 단어별 시도 횟수를 저장했습니다.\n\n지금 백업 파일도 저장할까요?')) downloadPersonalVocabularyBackup() }, 0)
+  }
   const question = questions[index]
   const finished = questions.length > 0 && index >= questions.length
 
@@ -121,7 +139,7 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
   return <div className="study-page">
     <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header>
     <main>
-      {mastery ? <MasteryCourse entries={studyDeck} progress={mastery} onProgress={setMastery} onStudyAgain={repeatDeckStudy} onNewCourse={startMemorizing} onExit={restartSetup} /> : memorizing ? <MemorizationDeck entries={studyDeck} page={deckPage} onPage={setDeckPage} onStartMastery={startMastery} /> : !questions.length ? <>
+      {mastery ? <MasteryCourse entries={studyDeck} progress={mastery} onProgress={setMastery} onAttempt={(word, isCorrect) => { if (personalReview) recordPersonalWordAttempt(word, isCorrect) }} onComplete={finishPersonalMastery} onStudyAgain={repeatDeckStudy} onNewCourse={startMemorizing} onExit={restartSetup} /> : memorizing ? <MemorizationDeck entries={studyDeck} page={deckPage} note={selectionNote} onPage={setDeckPage} onStartMastery={startMastery} /> : !questions.length ? <>
         <section className="study-hero"><span>VOCABULARY LAB</span><h1>외우는 대신,<br />꺼내 쓰는 연습.</h1><p>29,976개 단어장에서 뜻과 동의어를 확인하고, 문제 문맥 문장으로 해석과 영작을 연습합니다. 답은 언제든 바로 볼 수 있습니다.</p></section>
         <section className="study-mode-grid" aria-label="학습 게임 선택">
           <button className={game === 'vocabulary' ? 'study-mode study-mode--active' : 'study-mode'} onClick={() => setGame('vocabulary')}><span>01</span><strong>단어 시험</strong><p>뜻 입력 · 동의어 선택 · 철자 회상</p></button>
@@ -130,10 +148,10 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
         <section className="study-setup">
           <div><h2>{game === 'vocabulary' ? '단어 시험 설정' : '문장 미니게임 설정'}</h2><p>{game === 'sentence' ? '문제은행에서 실제 사용된 문맥 예문만 출제합니다.' : '세 유형을 고르게 섞어 즉시 피드백합니다.'}</p></div>
           <div className="study-settings">
-            <label><span>난이도</span><select value={level} onChange={(event) => setLevel(event.target.value)}>{LEVELS.map((value) => <option key={value} value={value}>{value === 'All' ? '전체' : value}</option>)}</select></label>
+            <label><span>출제 범위</span><select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}><option value="all">전체 단어장</option><option value="saved">내 단어장 무작위</option><option value="balanced">내 단어장 맞춤 50+50</option></select></label>
+            <label><span>난이도</span><select value={level} disabled={scope !== 'all'} onChange={(event) => setLevel(event.target.value)}>{LEVELS.map((value) => <option key={value} value={value}>{value === 'All' ? '전체' : value}</option>)}</select></label>
             <label><span>문항 수</span><select value={size} onChange={(event) => setSize(Number(event.target.value))}>{SIZES.map((value) => <option key={value} value={value}>{value}문항</option>)}</select></label>
-            <button className={academicOnly ? 'study-toggle study-toggle--active' : 'study-toggle'} onClick={() => setAcademicOnly((value) => !value)}>학술 핵심</button>
-            <button className={savedOnly ? 'study-toggle study-toggle--active' : 'study-toggle'} onClick={() => setSavedOnly((value) => !value)}>저장한 단어만</button>
+            <button disabled={scope !== 'all'} className={academicOnly && scope === 'all' ? 'study-toggle study-toggle--active' : 'study-toggle'} onClick={() => setAcademicOnly((value) => !value)}>학술 핵심</button>
           </div>
           <div className="study-start"><span>{vocabulary.length ? `${available.toLocaleString('en-US')}개 출제 가능` : loadError || '단어장을 불러오는 중입니다.'}</span><div className="study-start-actions">{game === 'vocabulary' && <button className="button button--secondary button--large" disabled={available < MEMORIZATION_SIZE} onClick={startMemorizing}>100단어 마스터리 시작</button>}<button className="button button--primary button--large" disabled={!available} onClick={start}>바로 게임 시작 <ArrowIcon /></button></div></div>
         </section>
@@ -142,7 +160,7 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
   </div>
 }
 
-function MemorizationDeck({ entries, page, onPage, onStartMastery }: { entries: LearningEntry[]; page: number; onPage: (page: number) => void; onStartMastery: () => void }) {
+function MemorizationDeck({ entries, page, note, onPage, onStartMastery }: { entries: LearningEntry[]; page: number; note?: string; onPage: (page: number) => void; onStartMastery: () => void }) {
   const total = Math.max(1, entries.length)
   const safePage = Math.min(page, total - 1)
   const entry = entries[safePage]
@@ -150,6 +168,7 @@ function MemorizationDeck({ entries, page, onPage, onStartMastery }: { entries: 
   const otherMeanings = (entry.meanings || []).slice(1)
   return <section className="memorization-deck">
     <div className="memorization-head"><div><span>MASTERY PREP</span><h1>한 장씩, 100개.</h1><p>한 화면에서 단어 하나에 집중하세요. 뜻·동의어·예문을 확인한 뒤 다음 카드로 넘어갑니다.</p></div><strong>{safePage + 1} / {total}</strong></div>
+    {note && <div className="mastery-notice" role="status">{note}</div>}
     <div className="memorization-progress"><i style={{ width: `${((safePage + 1) / total) * 100}%` }} /></div>
     <article className="memorization-flashcard" key={entry.word}>
       <div className="memorization-flashcard__top"><span>{String(safePage + 1).padStart(3, '0')}</span><div><small>{entry.partOfSpeech} · {entry.cefr}</small><h2>{entry.word}</h2>{entry.ipa && <em>{entry.ipa}</em>}</div></div>

@@ -7,6 +7,8 @@ type Props = {
   entries: LearningEntry[]
   progress: MasteryProgress
   onProgress: (progress: MasteryProgress) => void
+  onAttempt?: (word: string, correct: boolean) => void
+  onComplete?: (progress: MasteryProgress) => void
   onStudyAgain: () => void
   onNewCourse: () => void
   onExit: () => void
@@ -26,7 +28,7 @@ const expectedAnswer = (task: MasteryTask, entry: LearningEntry) => {
   return entry.word
 }
 
-export default function MasteryCourse({ entries, progress, onProgress, onStudyAgain, onNewCourse, onExit }: Props) {
+export default function MasteryCourse({ entries, progress, onProgress, onAttempt, onComplete, onStudyAgain, onNewCourse, onExit }: Props) {
   const [response, setResponse] = useState('')
   const [revealed, setRevealed] = useState(false)
   const [notice, setNotice] = useState('')
@@ -50,7 +52,9 @@ export default function MasteryCourse({ entries, progress, onProgress, onStudyAg
   }
   const judge = (correct: boolean) => {
     const result = advanceMasteryProgress(progress, correct, entries.map((item) => item.word))
+    onAttempt?.(entry.word, correct)
     onProgress(result.progress)
+    if (result.progress.complete) onComplete?.(result.progress)
     setResponse('')
     setRevealed(false)
     setNotice(result.transition)
