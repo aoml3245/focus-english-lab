@@ -151,7 +151,7 @@ export default function Settings({ onBack, onVoiceSettings, onExamData }: { onBa
       </section>
 
       <section className="settings-section">
-        <div className="settings-section-head"><div><span>08</span><h2>앱 업데이트</h2><p>GitHub Pages의 최신 배포를 다시 확인하고, 이전 앱 파일 캐시를 우회해 새 버전으로 재시작합니다.</p></div><button className="button button--primary" onClick={() => { void forceUpdate() }} disabled={updateBusy}>{updateBusy ? '최신 버전 확인 중…' : '최신 버전 강제 적용'}</button></div>
+        <div className="settings-section-head"><div><span>08</span><h2>앱 업데이트</h2><p>현재 배포된 최신 버전을 다시 확인하고, 이전 앱 파일 캐시를 우회해 새 버전으로 재시작합니다.</p></div><button className="button button--primary" onClick={() => { void forceUpdate() }} disabled={updateBusy}>{updateBusy ? '최신 버전 확인 중…' : '최신 버전 강제 적용'}</button></div>
         <dl className="settings-summary"><div><dt>현재 실행 버전</dt><dd>{APP_VERSION}</dd></div><div><dt>보존되는 데이터</dt><dd>학습 기록 · 단어장 · 음성 모델</dd></div></dl>
         <p className="settings-status" role="status" aria-live="polite">{updateMessage}</p>
       </section>

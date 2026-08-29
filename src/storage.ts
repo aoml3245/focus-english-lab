@@ -53,7 +53,7 @@ export function createSessionBackup(): SessionBackup {
   return { version: 1, active: loadActive(), history: loadHistory() }
 }
 
-export function importSessionBackup(backup: SessionBackup) {
+export function importSessionBackup(backup: SessionBackup, notify = true) {
   if (backup?.version !== 1 || !Array.isArray(backup.history)) return
   const sessions = new Map(loadHistory().map((session) => [session.id, session]))
   for (const incoming of backup.history) {
@@ -65,7 +65,7 @@ export function importSessionBackup(backup: SessionBackup) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(history))
   const currentActive = loadActive()
   if (backup.active && (!currentActive || (backup.active.updatedAt || backup.active.startedAt) > (currentActive.updatedAt || currentActive.startedAt))) localStorage.setItem(ACTIVE_KEY, JSON.stringify(backup.active))
-  notifyPrivateDataChanged()
+  if (notify) notifyPrivateDataChanged()
 }
 
 export function loadExcludedItemIds() {

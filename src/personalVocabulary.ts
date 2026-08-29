@@ -272,7 +272,7 @@ export function downloadPersonalVocabularyBackup() {
   return backup
 }
 
-export function importPersonalVocabularyBackup(text: string) {
+export function importPersonalVocabularyBackup(text: string, notify = true) {
   const backup = JSON.parse(text) as PersonalVocabularyBackup
   if (backup?.format !== 'focus-english-personal-vocabulary' || backup.version !== 1 || !Array.isArray(backup.personalWords) || !Array.isArray(backup.favorites)) throw new Error('Focus English Lab 개인 단어장 백업 파일이 아닙니다.')
   const words = new Map(loadPersonalWords().map((entry) => [normalizeWord(entry.word), entry]))
@@ -301,6 +301,6 @@ export function importPersonalVocabularyBackup(text: string) {
   localStorage.setItem(STATS_KEY, JSON.stringify(mergedStats))
   localStorage.setItem(SESSIONS_KEY, JSON.stringify([...sessions.values()].sort((a, b) => b.completedAt.localeCompare(a.completedAt)).slice(0, 200)))
   if (!loadActiveDailyBatch() && backup.activeBatch && !backup.activeBatch.complete) saveActiveDailyBatch(backup.activeBatch)
-  notifyPrivateDataChanged()
+  if (notify) notifyPrivateDataChanged()
   return { words: words.size, sessions: sessions.size }
 }

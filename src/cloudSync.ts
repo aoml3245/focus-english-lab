@@ -195,10 +195,10 @@ export async function syncPrivateLearningData(user: User) {
     const privateBackup = parsePrivateCloudBackup(remotePrivate.data()?.payload)
     const groupBackup = parseBackup(remoteShared.data()?.payload)
     if (privateBackup) {
-      importPersonalVocabularyBackup(JSON.stringify(privateBackup.vocabulary))
-      importSessionBackup(privateBackup.sessions)
+      importPersonalVocabularyBackup(JSON.stringify(privateBackup.vocabulary), false)
+      importSessionBackup(privateBackup.sessions, false)
     }
-    if (groupBackup) importPersonalVocabularyBackup(JSON.stringify(groupBackup))
+    if (groupBackup) importPersonalVocabularyBackup(JSON.stringify(groupBackup), false)
     const batch = writeBatch(db)
     batch.set(privateRef, { payload: checkedPayload(createPrivateCloudBackup()), updatedAt: serverTimestamp(), schemaVersion: 1 })
     batch.set(sharedRef, { payload: checkedPayload(sharedBackup()), updatedAt: serverTimestamp(), updatedBy: user.uid, schemaVersion: 1 })
