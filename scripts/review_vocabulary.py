@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import fcntl
 import json
+import os
 import re
 import time
 import urllib.error
@@ -51,6 +53,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=0, help="Review only the first N entries for pipeline testing")
     parser.add_argument("--words", default="", help="Comma-separated headwords for targeted regression testing")
     parser.add_argument("--merge", action="store_true", help="Merge a limited/targeted review into the full input artifact")
+    parser.add_argument("--lock-file", type=Path, default=Path("work/vocabulary/semantic-review.lock"))
     return parser.parse_args()
 
 
@@ -270,6 +273,53 @@ def load_cache(path: Path) -> dict[str, dict[str, Any]]:
     return reviewed
 
 
+def acquire_lock(path: Path):
+    """Prevent overlapping reviewers from appending duplicate cache records."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open("a+", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as error:
+        handle.seek(0)
+        owner = handle.read().strip() or "unknown process"
+        handle.close()
+        raise SystemExit(f"Vocabulary review is already running ({owner})") from error
+    handle.seek(0)
+    handle.truncate()
+    handle.write(json.dumps({"pid": os.getpid(), "startedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z")}))
+    handle.flush()
+    return handle
+
+
+def compact_cache(path: Path) -> None:
+    """Remove harmless duplicate JSONL rows left by an older overlapping run."""
+    if not path.exists():
+        return
+    nonempty_rows = sum(bool(line.strip()) for line in path.read_text(encoding="utf-8").splitlines())
+    records = load_cache(path)
+    if nonempty_rows == len(records):
+        return
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8") as output:
+        for record in records.values():
+            output.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+        output.flush()
+        os.fsync(output.fileno())
+    temporary.replace(path)
+    print(f"Compacted {path.name}: {nonempty_rows:,} -> {len(records):,} rows", flush=True)
+
+
+def write_json_atomic(path: Path, value: Any, *, pretty: bool = False) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8") as output:
+        json.dump(value, output, ensure_ascii=False, indent=2 if pretty else None,
+                  separators=None if pretty else (",", ":"))
+        output.flush()
+        os.fsync(output.fileno())
+    temporary.replace(path)
+
+
 def repair_translation(word: str, part_of_speech: str, definition: str, model: str, ollama_url: str) -> str:
     prompt = (
         "You are a professional English (en) to Korean (ko) translator. "
@@ -397,7 +447,7 @@ def contextualize_word(entry: dict[str, Any], model: str, ollama_url: str) -> di
         "a concise English definition, and part of speech. Define only the target word, not the surrounding phrase or "
         "the whole sentence. For an adjective, return an adjective gloss, not the noun it modifies: acoustic zones means "
         "음향의, not 음향 구역; actual times means 실제의, not 실제 시간. Use the local grammatical context even if "
-        "another dictionary sense is more frequent. "
+        "another dictionary sense is more frequent. Use Hangul only in ko; never add Hanja, Chinese, or Japanese text. "
         f'Target: {entry["word"]}\nSentence: {entry["example"]}'
     )
     payload = json.dumps({
@@ -410,6 +460,8 @@ def contextualize_word(entry: dict[str, Any], model: str, ollama_url: str) -> di
     with urllib.request.urlopen(request, timeout=180) as response:
         parsed = json.loads(json.loads(response.read()).get("response", ""))
     korean = str(parsed.get("ko", "")).strip()
+    if UNEXPECTED_SCRIPT_RE.search(korean):
+        korean = re.sub(r"\s+", " ", UNEXPECTED_SCRIPT_RE.sub("", korean)).strip(" ,;/·")
     english = clean_definition(str(parsed.get("en", "")))
     part_of_speech = str(parsed.get("pos", ""))
     if (not HANGUL_RE.search(korean) or UNEXPECTED_SCRIPT_RE.search(korean) or len(korean) > 35
@@ -669,6 +721,9 @@ def main() -> None:
         raise SystemExit("--batch-size must be between 1 and 200")
     if not 1 <= args.workers <= 8:
         raise SystemExit("--workers must be between 1 and 8")
+    review_lock = acquire_lock(args.lock_file)
+    for cache_path in [args.selection_cache, args.context_cache, args.draft_cache, args.validation_cache, args.cache]:
+        compact_cache(cache_path)
     all_entries = json.loads(args.input.read_text(encoding="utf-8"))
     entries = all_entries
     if args.words:
@@ -795,17 +850,16 @@ def main() -> None:
     if (report["reviewedRows"] != len(reviewed) or report["missingKoreanMeanings"]
             or report["asciiOnlyKoreanMeanings"] or report["unexpectedScriptMeanings"] or report["duplicateSenseIds"]):
         raise SystemExit("Semantic quality gate failed: " + json.dumps(report, ensure_ascii=False))
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.report.parent.mkdir(parents=True, exist_ok=True)
     output_entries = reviewed
     if args.merge:
         reviewed_by_word = {entry["word"]: entry for entry in reviewed}
         output_entries = [reviewed_by_word.get(entry["word"], entry) for entry in all_entries]
         report["outputRows"] = len(output_entries)
         report["mergedReviewedRows"] = len(reviewed_by_word)
-    args.output.write_text(json.dumps(output_entries, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_json_atomic(args.output, output_entries)
+    write_json_atomic(args.report, report, pretty=True)
     print(json.dumps(report, ensure_ascii=False, indent=2))
+    review_lock.close()
 
 
 if __name__ == "__main__":

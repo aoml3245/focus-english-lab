@@ -1,7 +1,7 @@
 {
   "name": "focus-english-lab",
   "private": true,
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Independent browser-based English proficiency practice with original questions, local AI coaching, and optional in-browser TTS.",
   "license": "MIT",
   "repository": {
@@ -15,6 +15,7 @@
     "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "tts:download": "node server/download-tts-model.mjs",
     "vocab:review": "python3 scripts/review_vocabulary.py",
+    "vocab:review:durable": "scripts/run_vocabulary_review.sh",
     "vocab:review:sample": "python3 scripts/review_vocabulary.py --limit 120 --merge --output public/vocabulary.json --report work/vocabulary/semantic-quality-report-sample.json --selection-cache work/vocabulary/semantic-selection-sample.jsonl --context-cache work/vocabulary/semantic-context-sample.jsonl --draft-cache work/vocabulary/semantic-draft-sample.jsonl --validation-cache work/vocabulary/semantic-validation-sample.jsonl --cache work/vocabulary/semantic-review-sample.jsonl",
     "prebuild": "npm run prepare:ort",
     "build": "tsc -b && vite build",
