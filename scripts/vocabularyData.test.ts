@@ -6,8 +6,9 @@ import type { LearningEntry } from '../src/learning'
 const vocabularyPath = resolve(process.cwd(), 'private/vocabulary.json')
 const hasPrivateVocabulary = existsSync(vocabularyPath)
 const vocabulary = hasPrivateVocabulary ? JSON.parse(readFileSync(vocabularyPath, 'utf8')) as LearningEntry[] : []
+const describePrivateVocabulary = hasPrivateVocabulary ? describe : describe.skip
 
-(hasPrivateVocabulary ? describe : describe.skip)('29,976-entry private vocabulary artifact', () => {
+describePrivateVocabulary('29,976-entry private vocabulary artifact', () => {
   it('has the exact target, unique normalized headwords, and complete learner fields', () => {
     expect(vocabulary).toHaveLength(29_976)
     expect(new Set(vocabulary.map((entry) => entry.word)).size).toBe(29_976)
