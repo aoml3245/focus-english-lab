@@ -1,5 +1,6 @@
 import { QUESTION_BANK } from './bank'
 import type { BaseItem, ItemKind, Section } from './types'
+import { buildFullBlueprint, buildReadingBlueprint, buildSectionBlueprint, pickTaskPractice } from './examBlueprint'
 
 export const EXAM_PACK_FORMAT = 'focus-english-lab.exam-pack'
 export const EXAM_PACK_VERSION = 1
@@ -97,19 +98,6 @@ export function downloadExamPack(pack: ExamPack, filename = 'focus-english-lab-e
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
-const shuffled = <T,>(values: T[]) => {
-  const result = [...values]
-  for (let i = result.length - 1; i > 0; i -= 1) {
-    const random = new Uint32Array(1)
-    crypto.getRandomValues(random)
-    const j = random[0] % (i + 1)
-    ;[result[i], result[j]] = [result[j], result[i]]
-  }
-  return result
-}
-
-const pick = (bank: BaseItem[], test: (item: BaseItem) => boolean, count: number, excludedIds: ReadonlySet<string>) => shuffled(bank.filter((item) => test(item) && !excludedIds.has(item.id))).slice(0, count)
-const title = (value: string) => (item: BaseItem) => item.title === value
 const NO_EXCLUSIONS = new Set<string>()
 
 export type PracticeTaskType = { title: string; label: string; description: string; candidateCount: number; setSize: number }
@@ -125,8 +113,8 @@ const TASK_META: Record<string, { label: string; description: string; setSize: n
   'Build a Sentence': { label: 'Build a Sentence', description: '섞인 단어와 짧은 구를 문법에 맞게 배열합니다.', setSize: 10 },
   'Write an Email': { label: 'Write an Email', description: '목적·상황·요청을 갖춘 이메일을 작성합니다.', setSize: 3 },
   'Write for an Academic Discussion': { label: 'Academic Discussion', description: '입장과 근거를 제시하고 다른 의견에 기여합니다.', setSize: 2 },
-  'Listen and Repeat': { label: 'Listen and Repeat', description: '문장을 듣고 준비 시간 없이 그대로 말합니다.', setSize: 10 },
-  'Take an Interview': { label: 'Take an Interview', description: '면접형 질문을 듣고 충분한 길이로 답합니다.', setSize: 6 },
+  'Listen and Repeat': { label: 'Listen and Repeat', description: '하나의 안내 상황에서 난도가 높아지는 7문장을 반복합니다.', setSize: 7 },
+  'Take an Interview': { label: 'Take an Interview', description: '하나의 주제로 이어지는 4개 질문에 답합니다.', setSize: 4 },
 }
 
 const fallbackTaskDescription = (kind: ItemKind) => ({
@@ -166,20 +154,11 @@ export function getPracticeTaskTypesFrom(bank: BaseItem[], section: Section, exc
 
 export function buildTaskPracticeFrom(bank: BaseItem[], section: Section, taskTitle: string, excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) {
   const task = getPracticeTaskTypesFrom(bank, section, excludedIds).find((candidate) => candidate.title === taskTitle)
-  return task ? pick(bank, (item) => item.section === section && item.title === taskTitle, task.setSize, excludedIds) : []
+  if (!task) return []
+  return pickTaskPractice(bank, section, taskTitle, task.setSize, excludedIds)
 }
-
-export const buildFullPracticeSetFrom = (bank: BaseItem[], excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) => [
-  ...pick(bank, (item) => item.section === 'reading' && item.kind === 'complete-words', 2, excludedIds), ...pick(bank, title('Read in Daily Life'), 6, excludedIds), ...pick(bank, title('Read an Academic Passage'), 8, excludedIds),
-  ...pick(bank, title('Listen and Choose a Response'), 8, excludedIds), ...pick(bank, (item) => item.section === 'listening' && item.title !== 'Listen and Choose a Response', 8, excludedIds),
-  ...pick(bank, title('Build a Sentence'), 10, excludedIds), ...pick(bank, title('Write an Email'), 1, excludedIds), ...pick(bank, title('Write for an Academic Discussion'), 1, excludedIds),
-  ...pick(bank, title('Listen and Repeat'), 7, excludedIds), ...pick(bank, title('Take an Interview'), 4, excludedIds),
-]
-
-export const buildSectionPracticeFrom = (bank: BaseItem[], section: Section, excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) => section === 'writing'
-  ? [...pick(bank, title('Build a Sentence'), 10, excludedIds), ...pick(bank, title('Write an Email'), 1, excludedIds), ...pick(bank, title('Write for an Academic Discussion'), 1, excludedIds)]
-  : section === 'speaking'
-    ? [...pick(bank, title('Listen and Repeat'), 7, excludedIds), ...pick(bank, title('Take an Interview'), 4, excludedIds)]
-    : pick(bank, (item) => item.section === section, 16, excludedIds)
+export const buildReadingPracticeSetFrom = (bank: BaseItem[], excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) => buildReadingBlueprint(bank, excludedIds)
+export const buildFullPracticeSetFrom = (bank: BaseItem[], excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) => buildFullBlueprint(bank, excludedIds)
+export const buildSectionPracticeFrom = (bank: BaseItem[], section: Section, excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) => buildSectionBlueprint(bank, section, excludedIds)
 
 export const countBySectionFrom = (bank: BaseItem[], section: Section, excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) => bank.filter((item) => item.section === section && !excludedIds.has(item.id)).length

@@ -29,6 +29,11 @@ export interface BaseItem {
   topic?: string
   context?: string
   difficulty?: 'B1' | 'B2' | 'C1'
+  grammarFocus?: string
+  stimulusGroupId?: string
+  scenarioId?: string
+  sequenceIndex?: number
+  sourceFamily?: string
   explanation?: string
 }
 

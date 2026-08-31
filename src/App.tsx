@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { AudioPrompt, ArrowIcon, Brand, HOME_NAVIGATION_EVENT, Recorder, Timer } from './components'
-import { CONTEXT_TOPIC_COUNT, SECTION_META } from './data'
+import { CONTEXT_TOPIC_COUNT, countReadingScoredItems, SECTION_META } from './data'
 import ExamData from './ExamData'
 import { buildFullPracticeSetFrom, buildSectionPracticeFrom, buildTaskPracticeFrom, countBySectionFrom, getActiveExamPackInfo, getActivePracticeItems, getAvailablePracticeItems, getPracticeTaskTypesFrom } from './examPack'
 import { displayAnswer, getSessionStats, isCorrect } from './review'
@@ -212,11 +212,16 @@ function Intro({ items, mode, practiceLabel, onBack, onStart: navigateToTest }: 
   const first = items[0]
   const isFull = new Set(items.map((item) => item.section)).size > 1
   const isMock = mode === 'mock'
+  const readingCards = items.filter((item) => item.section === 'reading').length
+  const readingScoredItems = countReadingScoredItems(items)
+  const selectionLabel = readingScoredItems > readingCards
+    ? `${items.length}개 화면 · Reading 채점 항목 ${readingScoredItems}개 구성`
+    : `${items.length}문항 구성`
   const immediateFeedback = !isMock
   const hasListening = items.some((item) => item.section === 'listening' && Boolean(item.audioText))
   const hasSpeaking = items.some((item) => item.section === 'speaking' && Boolean(item.audioText))
   const hasAudio = hasListening || hasSpeaking
-  const requiresAudioPreflight = isMock && hasAudio
+  const requiresAudioPreflight = false
   const localTts = hasAudio ? hasLocalTtsServer() : false
   const profile = hasAudio ? getVoiceProfile() : null
   const [attempt, setAttempt] = useState(0)
@@ -253,7 +258,7 @@ function Intro({ items, mode, practiceLabel, onBack, onStart: navigateToTest }: 
   const preparing = preparation.phase === 'preparing'
   const ready = preparation.phase === 'ready' || preparation.phase === 'system'
   const modeTitle = practiceLabel || (mode === 'study' ? '즉시 피드백 랜덤 세트' : mode === 'mock' ? '실전 모의시험' : `${SECTION_META[first.section].label} 집중 연습`)
-  return <div className="intro-screen"><header><Brand /><span>System check</span></header><main><div className="intro-copy"><span className="section-label">{isFull ? 'R · L · W · S' : SECTION_META[first.section].label}</span><h1>{modeTitle}</h1><p>{items.length}문항이 {BANK_SIZE}개 문제은행에서 새로 선택되었습니다. 모든 콘텐츠는 독창적인 연습 문항입니다.</p><ul>{immediateFeedback ? <><li>정답이 있는 문항은 제출 직후 문제·내 답·정답·해설을 함께 보여줍니다.</li><li>피드백을 확인하는 동안 타이머가 멈춥니다.</li></> : <li>정답과 해설은 전체 시험을 마친 뒤에 공개됩니다.</li>}{hasAudio && <li>{isMock ? `Listening·Speaking 음성을 ${localTts ? '로컬 서버' : '이 웹브라우저'}에서 모두 변환한 뒤 시험을 시작할 수 있습니다.` : '음성이 필요한 문항에서는 변환이 끝난 뒤 사용자가 재생 버튼을 눌러 시작합니다.'}</li>}{hasListening && <li>Listening에서는 이전 문항으로 돌아갈 수 없습니다.</li>}{hasSpeaking && <li>Speaking 녹음을 위해 마이크 권한이 필요합니다.</li>}</ul></div><div className="system-panel"><h2>시작 전 확인</h2><div><span>학습 방식</span><strong>{immediateFeedback ? '문항별 즉시 채점' : '종료 후 채점'}</strong></div><div><span>선택 문항</span><strong>{items.length}</strong></div>{hasAudio && profile && <div><span>오디오 출력</span><strong>{profile.shortLabel}</strong></div>}{hasSpeaking && <div><span>마이크</span><strong>Speaking에서 요청</strong></div>}{hasAudio && <div className={`preflight-status preflight-status--${preparation.phase}`} role="status" aria-live="polite"><span className={preparing ? 'audio-pulse audio-pulse--active' : 'audio-pulse'} /><span><strong>{preparing ? '모의시험 전체 음성 준비 중' : preparation.phase === 'ready' ? isMock ? '모의시험 전체 음성 준비 완료' : '문항별 음성 준비' : preparation.phase === 'system' ? '기기 음성 준비 완료' : '음성 준비 실패'}</strong><small>{preparation.message}</small>{preparing && preparation.progress?.percent !== undefined && <span className="preflight-progress" role="progressbar" aria-label="모의시험 전체 음성 준비 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={preparation.progress.percent}><span style={{ width: `${preparation.progress.percent}%` }} /></span>}{preparing && preparation.progress?.loadedBytes !== undefined && preparation.progress.totalBytes !== undefined && <small>{(preparation.progress.loadedBytes / 1024 / 1024).toFixed(1)} / {(preparation.progress.totalBytes / 1024 / 1024).toFixed(1)} MB{preparation.progress.file ? ` · ${preparation.progress.file}` : ''}</small>}</span></div>}{hasAudio && preparation.phase === 'error' && <button className="button button--secondary preflight-test" onClick={() => setAttempt((value) => value + 1)}>음성 준비 다시 시도</button>}<button className="button button--primary button--large" disabled={requiresAudioPreflight && !ready} onClick={navigateToTest}>{isMock ? requiresAudioPreflight && preparing ? '시험 음성 준비 중…' : '모의시험 시작' : '연습 시작'} <ArrowIcon /></button><button className="text-button" onClick={onBack}>나중에 하기</button></div></main></div>
+  return <div className="intro-screen"><header><Brand /><span>System check</span></header><main><div className="intro-copy"><span className="section-label">{isFull ? 'R · L · W · S' : SECTION_META[first.section].label}</span><h1>{modeTitle}</h1><p>{selectionLabel}이 {BANK_SIZE}개 문제은행에서 새로 선택되었습니다. Complete the Words 한 화면은 10개 빈칸을 채점합니다.</p><ul>{immediateFeedback ? <><li>정답이 있는 문항은 제출 직후 문제·내 답·정답·해설을 함께 보여줍니다.</li><li>피드백을 확인하는 동안 타이머가 멈춥니다.</li></> : <><li>정답과 해설은 전체 시험을 마친 뒤에 공개됩니다.</li><li>모의시험에서는 AI 글쓰기 코칭과 답안 수정 기능이 비활성화됩니다.</li></>}{hasAudio && <li>{isMock ? `Listening·Speaking 음성은 ${localTts ? '로컬 서버' : '이 웹브라우저'}에서 배경 준비되며, 준비를 기다리지 않고 시작할 수 있습니다.` : '음성이 필요한 문항에서는 변환이 끝난 뒤 사용자가 재생 버튼을 눌러 시작합니다.'}</li>}{hasListening && <li>Listening에서는 한 음원을 한 번 재생하고 같은 묶음의 문제를 이어서 풉니다.</li>}{hasSpeaking && <li>Speaking 녹음을 위해 마이크 권한이 필요합니다.</li>}</ul></div><div className="system-panel"><h2>시작 전 확인</h2><div><span>학습 방식</span><strong>{immediateFeedback ? '문항별 즉시 채점' : '종료 후 채점'}</strong></div><div><span>선택 문항</span><strong>{selectionLabel}</strong></div>{hasAudio && profile && <div><span>오디오 출력</span><strong>{profile.shortLabel}</strong></div>}{hasSpeaking && <div><span>마이크</span><strong>Speaking에서 요청</strong></div>}{hasAudio && <div className={`preflight-status preflight-status--${preparation.phase}`} role="status" aria-live="polite"><span className={preparing ? 'audio-pulse audio-pulse--active' : 'audio-pulse'} /><span><strong>{preparing ? '시험 음성 배경 준비 중' : preparation.phase === 'ready' ? isMock ? '모의시험 음성 준비 완료' : '문항별 음성 준비' : preparation.phase === 'system' ? '기기 음성 준비 완료' : '음성 준비 실패'}</strong><small>{preparation.message}</small>{preparing && preparation.progress?.percent !== undefined && <span className="preflight-progress" role="progressbar" aria-label="모의시험 전체 음성 준비 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={preparation.progress.percent}><span style={{ width: `${preparation.progress.percent}%` }} /></span>}{preparing && preparation.progress?.loadedBytes !== undefined && preparation.progress.totalBytes !== undefined && <small>{(preparation.progress.loadedBytes / 1024 / 1024).toFixed(1)} / {(preparation.progress.totalBytes / 1024 / 1024).toFixed(1)} MB{preparation.progress.file ? ` · ${preparation.progress.file}` : ''}</small>}</span></div>}{hasAudio && preparation.phase === 'error' && <button className="button button--secondary preflight-test" onClick={() => setAttempt((value) => value + 1)}>음성 준비 다시 시도</button>}<button className="button button--primary button--large" disabled={requiresAudioPreflight && !ready} onClick={navigateToTest}>{isMock ? '모의시험 시작' : '연습 시작'} <ArrowIcon /></button><button className="text-button" onClick={onBack}>나중에 하기</button></div></main></div>
 }
 
 function Test({ items, session, setSession, onAnswer, onFinish }: { items: BaseItem[]; session: SavedSession; setSession: (s: SavedSession) => void; onAnswer: (id: string, answer: Answer) => void; onFinish: () => void }) {
@@ -265,6 +270,7 @@ function Test({ items, session, setSession, onAnswer, onFinish }: { items: BaseI
   const index = Math.min(session.itemIndex, items.length - 1)
   const item = items[index]
   const currentAnswer = session.answers[item.id]
+  const isMock = session.mode === 'mock'
   const immediateFeedback = session.mode !== 'mock'
   const feedbackEligible = immediateFeedback && item.answer !== undefined
   const reviewed = feedbackEligible && Boolean(session.reviewedItemIds?.includes(item.id))
@@ -272,7 +278,7 @@ function Test({ items, session, setSession, onAnswer, onFinish }: { items: BaseI
   const feedbackCorrect = reviewed && isCorrect(item, currentAnswer)
   const reviewedItems = new Set(session.reviewedItemIds || [])
   const correctSoFar = items.filter((candidate) => reviewedItems.has(candidate.id) && isCorrect(candidate, session.answers[candidate.id])).length
-  const sectionItems = items.filter((candidate) => candidate.section === item.section)
+  const sectionItems = items.filter((candidate) => candidate.section === item.section && candidate.module === item.module)
   const localIndex = sectionItems.findIndex((candidate) => candidate.id === item.id)
   const navStart = Math.max(0, Math.min(localIndex - 5, sectionItems.length - 11))
   const visibleNavItems = sectionItems.slice(navStart, navStart + 11)
@@ -288,13 +294,27 @@ function Test({ items, session, setSession, onAnswer, onFinish }: { items: BaseI
     setSession(updated)
     saveActive(updated)
   }, [index, items.length, onFinish, session, setSession])
+  const expireScope = useCallback(() => {
+    if (!isMock) { moveNext(); return }
+    let nextIndex = index + 1
+    while (nextIndex < items.length && items[nextIndex].section === item.section && items[nextIndex].module === item.module) nextIndex += 1
+    if (nextIndex >= items.length) { onFinish(); return }
+    const updated = { ...session, itemIndex: nextIndex, updatedAt: new Date().toISOString() }
+    setSession(updated)
+    saveActive(updated)
+  }, [index, isMock, item.module, item.section, items, moveNext, onFinish, session, setSession])
   const primaryAction = feedbackEligible && !reviewed ? revealAnswer : moveNext
   const primaryLabel = feedbackEligible && !reviewed ? '정답 확인' : index === items.length - 1 ? 'Finish' : immediateFeedback ? '다음 문제' : 'Next'
   const canBack = !immediateFeedback && item.section !== 'listening' && index > 0 && items[index - 1].section === item.section && items[index - 1].module === item.module
   const back = () => { if (canBack) { const updated = { ...session, itemIndex: index - 1 }; setSession(updated); saveActive(updated) } }
   const assistantActive = (item.section === 'listening' && audioActive) || (item.section === 'writing' && coachActive)
-  const timerPaused = assistantActive || reviewed
-  const timerExpire = feedbackEligible && !reviewed ? revealAnswer : moveNext
+  const timerPaused = !isMock && (assistantActive || reviewed)
+  const timerExpire = isMock ? expireScope : feedbackEligible && !reviewed ? revealAnswer : moveNext
+  const mockSeconds = item.section === 'reading' ? (item.module === 1 ? 18 : 12) * 60 : item.section === 'listening' ? (item.module === 1 ? 18 : 11) * 60 : SECTION_META[item.section].minutes * 60
+  const timerSeconds = isMock ? mockSeconds : item.timeSeconds
+  const timerKey = isMock ? `${item.section}-${item.module}` : item.id
+  const previousItem = items[index - 1]
+  const audioAlreadyPlayedForGroup = item.kind === 'listen-choice' && previousItem?.kind === 'listen-choice' && previousItem.stimulusGroupId === item.stimulusGroupId
   useEffect(() => {
     setHelpOpen(false)
     setAudioActive(false)
@@ -302,7 +322,7 @@ function Test({ items, session, setSession, onAnswer, onFinish }: { items: BaseI
     window.getSelection()?.removeAllRanges()
     questionLayoutRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' })
   }, [item.id])
-  return <div className="test-screen"><header><Brand /><div className="test-tools">{immediateFeedback && <span className="study-mode-badge">즉시 피드백</span>}<button onClick={() => setHelpOpen(true)}>Help</button><button onClick={() => setTimeHidden((value) => !value)}>{timeHidden ? 'Show Time' : 'Hide Time'}</button><span className="timer-wrap"><Timer key={item.id} seconds={item.timeSeconds} hidden={timeHidden} paused={timerPaused} onExpire={timerExpire} /></span></div></header><div className="test-subhead"><strong>{SECTION_META[item.section].label} — Module {item.module}</strong><div className="question-nav">{navStart > 0 && <b>…</b>}{visibleNavItems.map((candidate, i) => <span key={candidate.id} className={`${candidate.id === item.id ? 'current' : ''} ${session.answers[candidate.id] !== undefined ? 'answered' : ''}`}>{navStart + i + 1}</span>)}{navStart + visibleNavItems.length < sectionItems.length && <b>…</b>}</div><span>Question {localIndex + 1} of {sectionItems.length}</span></div><main ref={questionLayoutRef} className={`question-layout question-layout--${item.kind}`}><Question key={item.id} item={item} answer={currentAnswer} locked={reviewed} onAnswer={(answer) => onAnswer(item.id, answer)} onAudioState={item.section === 'listening' ? setAudioActive : undefined} onCoachState={item.section === 'writing' ? setCoachActive : undefined} /></main>{reviewed && <InstantFeedback item={item} answer={currentAnswer} correct={feedbackCorrect} correctSoFar={correctSoFar} />}<footer><span>{item.context ? `${item.topic} · ${item.context}` : item.topic} · {item.difficulty}</span><div>{canBack && <button className="button button--secondary" onClick={back}><ArrowIcon direction="left" /> Back</button>}<button className="button button--primary" disabled={feedbackEligible && !reviewed && !answered} onClick={primaryAction}>{primaryLabel} <ArrowIcon /></button></div></footer>{helpOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setHelpOpen(false)}><section className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onMouseDown={(event) => event.stopPropagation()}><h2 id="help-title">시험 화면 도움말</h2><ul>{immediateFeedback && <li>정답 확인을 누르면 바로 채점되며, 문제·내 답·정답·해설을 확인하는 동안 타이머가 멈춥니다.</li>}<li>{immediateFeedback ? '즉시 피드백 연습은 한 방향으로 진행됩니다.' : '현재 모듈 안에서는 Back으로 이전 Reading/Writing/Speaking 문항을 확인할 수 있습니다.'}</li><li>Listening 문항은 답한 뒤 이전으로 돌아갈 수 없습니다.</li><li>Listening 오디오와 AI Writing 코칭을 기다리는 동안에는 타이머가 멈춥니다.</li><li>Hide Time은 타이머 표시만 숨기며 시간은 계속 흐릅니다.</li><li>응답은 이 브라우저에 자동 저장됩니다.</li></ul><button autoFocus className="button button--primary" onClick={() => setHelpOpen(false)}>Close</button></section></div>}</div>
+  return <div className="test-screen"><header><Brand /><div className="test-tools">{immediateFeedback && <span className="study-mode-badge">즉시 피드백</span>}<button onClick={() => setHelpOpen(true)}>Help</button><button onClick={() => setTimeHidden((value) => !value)}>{timeHidden ? 'Show Time' : 'Hide Time'}</button><span className="timer-wrap"><Timer key={timerKey} seconds={timerSeconds} hidden={timeHidden} paused={timerPaused} onExpire={timerExpire} /></span></div></header><div className="test-subhead"><strong>{SECTION_META[item.section].label} — Module {item.module}</strong><div className="question-nav">{navStart > 0 && <b>…</b>}{visibleNavItems.map((candidate, i) => <span key={candidate.id} className={`${candidate.id === item.id ? 'current' : ''} ${session.answers[candidate.id] !== undefined ? 'answered' : ''}`}>{navStart + i + 1}</span>)}{navStart + visibleNavItems.length < sectionItems.length && <b>…</b>}</div><span>Question {localIndex + 1} of {sectionItems.length}</span></div><main ref={questionLayoutRef} className={`question-layout question-layout--${item.kind}`}><Question key={item.id} item={item} answer={currentAnswer} locked={reviewed} onAnswer={(answer) => onAnswer(item.id, answer)} onAudioState={item.section === 'listening' ? setAudioActive : undefined} onCoachState={!isMock && item.section === 'writing' ? setCoachActive : undefined} coachEnabled={!isMock} audioAlreadyPlayedForGroup={audioAlreadyPlayedForGroup} /></main>{reviewed && <InstantFeedback item={item} answer={currentAnswer} correct={feedbackCorrect} correctSoFar={correctSoFar} />}<footer><span>{item.context ? `${item.topic} · ${item.context}` : item.topic} · {item.difficulty}</span><div>{canBack && <button className="button button--secondary" onClick={back}><ArrowIcon direction="left" /> Back</button>}<button className="button button--primary" disabled={feedbackEligible && !reviewed && !answered} onClick={primaryAction}>{primaryLabel} <ArrowIcon /></button></div></footer>{helpOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setHelpOpen(false)}><section className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onMouseDown={(event) => event.stopPropagation()}><h2 id="help-title">시험 화면 도움말</h2><ul>{immediateFeedback && <li>정답 확인을 누르면 바로 채점되며, 문제·내 답·정답·해설을 확인하는 동안 타이머가 멈춥니다.</li>}<li>{immediateFeedback ? '즉시 피드백 연습은 한 방향으로 진행됩니다.' : '모의시험 타이머는 문항이 아니라 현재 섹션 또는 모듈 전체에 적용됩니다.'}</li><li>Listening에서는 한 음원을 한 번만 재생하고 같은 묶음의 문제를 이어서 풉니다.</li><li>{isMock ? '모의시험 중에는 AI 글쓰기 코칭과 타이머 일시정지가 제공되지 않습니다.' : '연습 중 오디오와 AI 코칭을 기다리는 동안에는 타이머가 멈춥니다.'}</li><li>Hide Time은 타이머 표시만 숨기며 시간은 계속 흐릅니다.</li><li>응답은 이 브라우저에 자동 저장됩니다.</li></ul><button autoFocus className="button button--primary" onClick={() => setHelpOpen(false)}>Close</button></section></div>}</div>
 }
 
 function InstantFeedback({ item, answer, correct, correctSoFar }: { item: BaseItem; answer: Answer | undefined; correct: boolean; correctSoFar: number }) {
@@ -317,7 +337,7 @@ function InstantFeedback({ item, answer, correct, correctSoFar }: { item: BaseIt
   </section>
 }
 
-function Question({ item, answer, locked = false, onAnswer, onAudioState, onCoachState }: { item: BaseItem; answer: Answer | undefined; locked?: boolean; onAnswer: (answer: Answer) => void; onAudioState?: (active: boolean) => void; onCoachState?: (active: boolean) => void }) {
+function Question({ item, answer, locked = false, onAnswer, onAudioState, onCoachState, coachEnabled = true, audioAlreadyPlayedForGroup = false }: { item: BaseItem; answer: Answer | undefined; locked?: boolean; onAnswer: (answer: Answer) => void; onAudioState?: (active: boolean) => void; onCoachState?: (active: boolean) => void; coachEnabled?: boolean; audioAlreadyPlayedForGroup?: boolean }) {
   if (item.kind === 'complete-words') {
     const pieces = item.passage!.split(/(\w+___)/g)
     const values = Array.isArray(answer) ? answer : []
@@ -325,7 +345,7 @@ function Question({ item, answer, locked = false, onAnswer, onAudioState, onCoac
     return <div className="single-column"><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><div className="cloze-passage">{pieces.map((piece, i) => { if (!piece.endsWith('___')) return <span key={i}>{piece}</span>; blank += 1; const index = blank; return <label key={i}>{piece.slice(0, -3)}<input aria-label={`빈칸 ${index + 1}`} disabled={locked} value={values[index] || ''} onChange={(event) => { const next = [...values]; next[index] = event.target.value; onAnswer(next) }} /></label> })}</div></div>
   }
   if (item.kind === 'multiple-choice') return <SplitQuestion item={item} answer={answer} locked={locked} onAnswer={onAnswer} />
-  if (item.kind === 'listen-choice') return <div className="single-column listening"><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><AudioPrompt key={item.id} text={item.audioText!} speechMode={examSpeechMode('listening', item.title)} onPlaybackChange={onAudioState} /><h2>{item.prompt || 'Choose the best response.'}</h2><Options options={item.options!} answer={answer} locked={locked} onAnswer={onAnswer} /></div>
+  if (item.kind === 'listen-choice') return <div className="single-column listening"><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div>{audioAlreadyPlayedForGroup ? <p className="notice">이 문제 묶음의 음원은 앞 문항에서 한 번 재생되었습니다.</p> : <AudioPrompt key={item.stimulusGroupId || item.id} text={item.audioText!} speechMode={examSpeechMode('listening', item.title)} onPlaybackChange={onAudioState} />}<h2>{item.prompt || 'Choose the best response.'}</h2><Options options={item.options!} answer={answer} locked={locked} onAnswer={onAnswer} /></div>
   if (item.kind === 'sentence-build') {
     const chosen = Array.isArray(answer) ? answer : []
     const used = new Map<string, number>()
@@ -341,7 +361,7 @@ function Question({ item, answer, locked = false, onAnswer, onAudioState, onCoac
   }
   if (item.kind === 'email' || item.kind === 'discussion') {
     const text = typeof answer === 'string' ? answer : ''
-    return <div className="writing-layout writing-layout--coach"><div><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><p className="writing-prompt">{item.prompt}</p>{item.passage && <pre className="student-posts">{item.passage}</pre>}</div><div className="editor"><div className="editor-meta"><strong>Your response</strong><span>{text.trim() ? text.trim().split(/\s+/).length : 0} words</span></div><textarea value={text} onChange={(event) => onAnswer(event.target.value)} spellCheck={false} placeholder="Type your response here…" /></div><Suspense fallback={<aside className="writing-coach writing-coach--loading">AI 코치를 불러오는 중입니다…</aside>}><WritingCoach key={item.id} item={item} response={text} onApply={onAnswer} onBusyChange={onCoachState} /></Suspense></div>
+    return <div className={coachEnabled ? 'writing-layout writing-layout--coach' : 'writing-layout'}><div><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><p className="writing-prompt">{item.prompt}</p>{item.passage && <pre className="student-posts">{item.passage}</pre>}</div><div className="editor"><div className="editor-meta"><strong>Your response</strong><span>{text.trim() ? text.trim().split(/\s+/).length : 0} words</span></div><textarea value={text} onChange={(event) => onAnswer(event.target.value)} spellCheck={false} placeholder="Type your response here…" /></div>{coachEnabled && <Suspense fallback={<aside className="writing-coach writing-coach--loading">AI 코치를 불러오는 중입니다…</aside>}><WritingCoach key={item.id} item={item} response={text} onApply={onAnswer} onBusyChange={onCoachState} /></Suspense>}</div>
   }
   return <div className="single-column speaking"><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><AudioPrompt key={item.id} text={item.audioText!} speechMode={examSpeechMode('speaking', item.title)} /><div className="speaking-prompt">{item.kind === 'interview' ? item.audioText : 'Repeat the sentence you heard.'}</div><Recorder onRecorded={(duration) => onAnswer(duration)} /></div>
 }

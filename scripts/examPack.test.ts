@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildTaskPracticeFrom, createExamPack, EXAM_PACK_FORMAT, getPracticeTaskTypesFrom, parseExamPack } from '../src/examPack'
+import { buildReadingPracticeSetFrom, buildTaskPracticeFrom, createExamPack, EXAM_PACK_FORMAT, getPracticeTaskTypesFrom, parseExamPack } from '../src/examPack'
 import { QUESTION_BANK } from '../src/bank'
 import type { BaseItem } from '../src/types'
 
@@ -44,5 +44,13 @@ describe('portable exam packs', () => {
     const practice = buildTaskPracticeFrom(QUESTION_BANK, 'reading', title, excluded)
     expect(practice.length).toBeGreaterThan(0)
     expect(practice.every((candidate) => !excluded.has(candidate.id))).toBe(true)
+  })
+
+  it('builds two grouped Reading modules from the active bank', () => {
+    const practice = buildReadingPracticeSetFrom(QUESTION_BANK)
+    expect(practice).toHaveLength(23)
+    expect(new Set(practice.map((candidate) => candidate.id)).size).toBe(23)
+    expect(practice.filter((candidate) => candidate.module === 1)).toHaveLength(11)
+    expect(practice.filter((candidate) => candidate.module === 2)).toHaveLength(12)
   })
 })

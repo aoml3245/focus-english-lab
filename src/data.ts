@@ -1,6 +1,6 @@
 import type { Section } from './types'
 
-export { QUESTION_BANK as PRACTICE_ITEMS, buildFullPracticeSet, buildSectionPractice, countBySection, CONTEXT_TOPIC_COUNT } from './bank'
+export { QUESTION_BANK as PRACTICE_ITEMS, buildFullPracticeSet, buildReadingPracticeSet, buildSectionPractice, countBySection, countReadingScoredItems, CONTEXT_TOPIC_COUNT } from './bank'
 
 export const SECTION_META: Record<Section, { label: string; minutes: number; tasks: string }> = {
   reading: { label: 'Reading', minutes: 30, tasks: 'Complete Words · Daily Life · Academic Passage' },

@@ -1,4 +1,7 @@
 import { prepareSentenceTiles } from './sentenceTiles'
+import { paraphraseForOption } from './readingLanguage'
+import { buildResearchSentencePattern } from './sentenceBuildPatterns'
+import { buildDiscussionTask, buildEmailPrompt, buildInterviewScenario, buildRepeatScenario } from './openTaskPatterns'
 import type { BaseItem } from './types'
 
 type Difficulty = NonNullable<BaseItem['difficulty']>
@@ -43,6 +46,29 @@ const question = (prompt: string, correct: string, distractors: [string, string,
   return { prompt, options, answer, explanation }
 }
 
+const FOCUS_PARAPHRASES: Record<string, string> = {
+  orientation: 'the capacity to work out which way to travel',
+  symbiosis: 'an interdependent association between unlike species',
+  precursor: 'an early indication of a possible later event',
+  permeable: 'able to let water move through its surface',
+  layered: 'formed in a sequence of separate bands',
+  attenuate: 'make something weaker or less intense',
+  salient: 'particularly prominent and likely to attract attention',
+  retrieval: 'bringing previously stored information back to mind',
+  simultaneous: 'taking place together rather than one after another',
+  legibility: 'how readily written material can be recognized and understood',
+  topology: 'the arrangement of links among the parts of a system',
+  authentication: 'confirming that a person or source is genuine',
+  autonomous: 'capable of functioning with little immediate human direction',
+  additive: 'created by placing successive amounts of material on top of one another',
+  emulate: 'copy a useful feature in order to achieve a similar result',
+  geothermal: 'connected with energy obtained from below Earth’s surface',
+  membrane: 'a selective sheet through which only certain materials can move',
+  runoff: 'rainwater moving across land rather than soaking into it',
+  incentive: 'a motivating benefit or pressure that makes an action more likely',
+  aggregate: 'a combined total formed from several separate amounts',
+}
+
 const makeCloze = (text: string) => {
   const firstSentenceEnd = text.indexOf('.')
   let candidateIndex = 0
@@ -59,32 +85,37 @@ const makeCloze = (text: string) => {
   return { passage, answer: answers.join('|') }
 }
 
-const chunkSentence = (text: string) => {
-  const words = text.split(/\s+/)
-  const chunks: string[] = []
-  for (let index = 0; index < words.length; index += 2) chunks.push(words.slice(index, index + 2).join(' '))
-  return chunks
-}
-
 export const NEW_TOPIC_ITEMS: BaseItem[] = SEEDS.flatMap((seed, index) => {
   const id = `n-${index}`
-  const academicPassage = `Researchers examined ${seed.subject}. They found that ${seed.finding}. ${seed.mechanism}. In this context, ${seed.focusWord} means ${seed.focusMeaning}. However, ${seed.caveat}. The team therefore concluded that ${seed.implication}. The result is useful because it connects an observed pattern with both a mechanism and a clear limit.`
+  const academicFormats = [
+    `Researchers examined ${seed.subject}. They found that ${seed.finding}. ${seed.mechanism}. The report used the term ${seed.focusWord} for this feature, describing it as ${seed.focusMeaning}. However, ${seed.caveat}. The team therefore concluded that ${seed.implication}.`,
+    `A recent investigation asked how to interpret ${seed.subject}. Evidence showed that ${seed.finding}. The proposed mechanism was straightforward: ${seed.mechanism}. In this context, ${seed.focusWord} means ${seed.focusMeaning}. Because ${seed.caveat}, the authors argued that ${seed.implication}.`,
+    `Explanations of ${seed.subject} have often emphasized a single factor. New observations instead indicated that ${seed.finding}. ${seed.mechanism}. Researchers described the relevant feature as ${seed.focusWord}, meaning ${seed.focusMeaning}. Yet ${seed.caveat}. This limitation led them to conclude that ${seed.implication}.`,
+    `To evaluate ${seed.subject}, a research team compared an observed result with a possible explanation. The result was that ${seed.finding}; the explanation was that ${seed.mechanism}. The term ${seed.focusWord} refers to ${seed.focusMeaning}. The conclusion remained conditional since ${seed.caveat}, so ${seed.implication}.`,
+  ]
+  const academicPassage = `${academicFormats[index % academicFormats.length]} This distinction matters when evidence guides a practical decision.`
   const cloze = makeCloze(academicPassage)
   const notice = `Campus notice: Because ${seed.problem}, ${seed.actor} will ${seed.action}. The temporary change begins Monday and will be reviewed after three weeks. Questions should be sent to the service desk.`
   const conversation = `Student: I am having trouble because ${seed.problem}. Staff member: I understand. ${seed.actor} will ${seed.action}. Student: Is that permanent? Staff member: Not yet. We will test it for three weeks, collect comments, and then decide.`
+  const announcement = `Campus announcement about ${seed.service}: ${seed.actor} will ${seed.action} because ${seed.problem}. The temporary arrangement begins Monday. Review the updated instructions and report any access conflict before the three-week evaluation.`
   const talk = `Professor: Today we will consider ${seed.subject}. A recent study found that ${seed.finding}. ${seed.mechanism}. The term ${seed.focusWord} here refers to ${seed.focusMeaning}. We should not overstate the result because ${seed.caveat}. The broader lesson is that ${seed.implication}.`
-  const sentenceChunks = chunkSentence(`that ${seed.finding}`)
-  const tiles = prepareSentenceTiles(sentenceChunks, `${id}-w0`, seed.difficulty === 'B1' ? undefined : index % 2 ? 'had ignored' : 'will ignore')
-  const response = question('Choose the best response.', seed.exchangeCorrect, ['The office closes at five.', 'I read it last week.', 'It is beside the library.'], 'The response directly answers the short spoken prompt.', index)
-  const academicMain = question('What did the researchers find?', seed.finding, ['the project produced no observable pattern', 'the study examined only historical documents', 'every condition produced an identical result'], `The passage directly reports that ${seed.finding}.`, index + 1)
-  const academicLimit = question('Why should the conclusion be interpreted carefully?', seed.caveat, ['the topic requires specialist knowledge', 'the researchers collected no evidence', 'the mechanism contradicts the finding'], 'The caveat limits how broadly the finding can be applied.', index + 2)
-  const academicVocabulary = question(`The word “${seed.focusWord}” is closest in meaning to`, seed.focusMeaning, ['a temporary schedule change', 'a claim with no evidence', 'a measurement that is always exact'], `The passage defines “${seed.focusWord}” through context.`, index + 3)
-  const dailyAction = question('What action will be taken?', `${seed.actor} will ${seed.action}.`, ['The activity will be canceled permanently.', 'Students must solve the problem alone.', 'The service desk will close for three weeks.'], 'The notice states the planned action directly.', index + 2)
-  const dailyReason = question('Why is the change needed?', seed.problem, ['a new fee was introduced', 'too few people registered', 'the academic calendar changed'], 'The notice gives this reason in its first sentence.', index + 3)
-  const conversationProblem = question('What problem does the student mention?', seed.problem, ['a grade was entered incorrectly', 'a textbook is unavailable', 'a club meeting was canceled'], 'The student states the problem at the beginning.', index)
-  const conversationNext = question('What will happen before a final decision?', 'The change will be tested and comments collected.', ['The student will decide alone.', 'The service will close.', 'No action will be attempted.'], 'The staff member describes a trial followed by review.', index + 1)
-  const talkMain = question('What is the main purpose of the talk?', `To explain a finding about ${seed.subject} and its limitation`, ['To give travel directions', 'To argue that the topic has no value', 'To compare two biographies'], 'The talk connects a finding, mechanism, and caveat.', index + 2)
-  const talkLimit = question('Which limitation does the professor emphasize?', seed.caveat, ['the study had no question', 'the example was fictional', 'the researchers found no mechanism'], 'The professor states this caution directly.', index + 3)
+  const sentencePattern = buildResearchSentencePattern(seed, index)
+  const tiles = prepareSentenceTiles(sentencePattern.correct, `${id}-w0`)
+  const response = question(`Which reply best fits the brief exchange about ${seed.service}?`, seed.exchangeCorrect, [`The office responsible for ${seed.subject} closes at five.`, `I read the ${seed.subject} report last week.`, `The building for ${seed.service} is beside the library.`], 'The response directly answers the short spoken prompt.', index)
+  const findingParaphrase = paraphraseForOption(seed.finding)
+  const actionParaphrase = paraphraseForOption(seed.action)
+  const academicMain = question(`Which option best restates the principal finding about ${seed.subject}?`, `The observations can be summarized as follows: ${findingParaphrase}.`, [`No consistent evidence was found concerning ${seed.subject}.`, `The caveat erased every observation about ${seed.subject}.`, `All conditions produced an identical result in the ${seed.subject} study.`], 'The correct choice preserves the scope of the finding while using different language.', index + 1)
+  const academicLimit = question(`What does the caveat imply about using the ${seed.subject} result elsewhere?`, `The result about ${seed.subject} remains conditional until it is tested beyond the stated limitation.`, [`The investigation of ${seed.subject} produced no observations.`, `The finding about ${seed.subject} is universal merely because a mechanism was proposed.`, `Only specialists can understand ${seed.subject}, regardless of the evidence.`], 'The caveat places a boundary on claims that extend beyond the observed setting.', index + 2)
+  const academicVocabulary = question(`In the passage about ${seed.subject}, “${seed.focusWord}” is closest in meaning to`, `${FOCUS_PARAPHRASES[seed.focusWord]} in the discussion of ${seed.subject}`, [`a temporary schedule change involving ${seed.service}`, `an unsupported statement about ${seed.subject}`, `a measurement of ${seed.subject} that can never vary`], `The surrounding explanation supports the meaning of “${seed.focusWord}.”`, index + 3)
+  const dailyAction = question(`What action is announced for ${seed.service}?`, `The notice introduces a limited operational adjustment: ${actionParaphrase}.`, [`${seed.service} will be permanently canceled without a replacement.`, `Individuals must resolve ${seed.problem} without assistance.`, `${seed.actor} will delay every response until the review is complete.`], 'The correct option paraphrases the action announced in the notice.', index + 2)
+  const dailyReason = question(`What does the review schedule imply about the change to ${seed.service}?`, `${seed.actor} may revise the arrangement after examining how well it works.`, [`The ${seed.service} arrangement will become permanent regardless of its effects.`, `The service desk will decide whether ${seed.problem} ever existed.`, `Comments about ${seed.service} will be rejected until the trial ends.`], 'A temporary period followed by review means later evidence can affect the plan.', index + 3)
+  const conversationProblem = question(`What difficulty with ${seed.service} does the student report?`, seed.problem, [`a grade unrelated to ${seed.subject} was entered incorrectly`, `a required textbook for ${seed.subject} has disappeared from the library`, `a student organization unrelated to ${seed.service} canceled its meeting`], 'The student states the practical problem at the beginning.', index)
+  const announcementAction = question(`What should listeners do if the ${seed.service} change creates an access conflict?`, `They should report the ${seed.service} conflict before the evaluation.`, [`They should wait until ${seed.service} becomes permanent.`, `They should contact an organization unrelated to ${seed.actor}.`, `They should ignore the updated ${seed.service} instructions until Monday.`], 'The announcement requests reports before the three-week evaluation.', index + 1)
+  const talkMain = question(`What is the professor’s main purpose in discussing ${seed.subject}?`, `To explain a finding about ${seed.subject}, its mechanism, and its limitation`, [`To provide ${seed.service} directions instead of explaining ${seed.subject}`, `To argue that ${seed.subject} has no value`, `To compare two biographies unrelated to ${seed.subject}`], 'The talk connects a finding, a mechanism, and a caveat.', index + 2)
+  const talkLimit = question(`Which caution restricts the conclusion about ${seed.subject}?`, seed.caveat, [`the study of ${seed.subject} asked no research question`, `the example about ${seed.subject} was entirely fictional`, `the researchers proposed no mechanism for ${seed.subject}`], 'The professor states this limitation explicitly.', index + 3)
+  const discussion = buildDiscussionTask({ ...seed, service: seed.service, action: seed.action, limitation: seed.caveat }, index + 53)
+  const repeatScenario = buildRepeatScenario({ ...seed, service: seed.service, action: seed.action }, index + 53)
+  const interviewScenario = buildInterviewScenario({ ...seed, service: seed.service, action: seed.action }, index + 53)
 
   return [
     { ...base(`${id}-c0`, 'reading', 'complete-words', 'Complete the Words', seed, '학술 문맥과 철자', 240), instruction: '첫 문장은 그대로 읽고, 이후 빠진 단어의 나머지 철자를 완성하세요.', passage: cloze.passage, answer: cloze.answer, explanation: '문맥, 문법 형태, 철자를 함께 확인하세요.' },
@@ -95,16 +126,14 @@ export const NEW_TOPIC_ITEMS: BaseItem[] = SEEDS.flatMap((seed, index) => {
     { ...base(`${id}-r4`, 'reading', 'multiple-choice', 'Read in Daily Life', seed, `${seed.service} · 이유`, 75), difficulty: index % 3 === 0 ? 'B1' : 'B2', instruction: '짧은 공지의 이유를 파악하세요.', passage: notice, ...dailyReason },
     { ...base(`${id}-l0`, 'listening', 'listen-choice', 'Listen and Choose a Response', seed, '짧은 캠퍼스 대화', 35), difficulty: 'B1', instruction: '짧은 말을 듣고 가장 자연스러운 응답을 고르세요.', audioText: seed.exchangePrompt, ...response },
     { ...base(`${id}-l1`, 'listening', 'listen-choice', 'Listen to a Conversation', seed, `${seed.service} · 문제`, 70), instruction: '대화에서 제기된 실제 문제를 파악하세요.', audioText: conversation, ...conversationProblem },
-    { ...base(`${id}-l2`, 'listening', 'listen-choice', 'Listen to a Conversation', seed, `${seed.service} · 후속 조치`, 70), instruction: '대화의 후속 조치와 순서를 파악하세요.', audioText: conversation, ...conversationNext },
+    { ...base(`${id}-l2`, 'listening', 'listen-choice', 'Listen to an Announcement', seed, `${seed.service} · 변경 공지`, 55), instruction: '공지에서 청자가 해야 할 행동을 파악하세요.', audioText: announcement, ...announcementAction },
     { ...base(`${id}-l3`, 'listening', 'listen-choice', 'Listen to an Academic Talk', seed, '학술 강의 중심 내용', 80), instruction: '짧은 강의의 중심 목적을 파악하세요.', audioText: talk, ...talkMain },
     { ...base(`${id}-l4`, 'listening', 'listen-choice', 'Listen to an Academic Talk', seed, '학술 강의 한계', 80), instruction: '강의에서 강조한 한계를 찾으세요.', audioText: talk, ...talkLimit },
-    { ...base(`${id}-w0`, 'writing', 'sentence-build', 'Build a Sentence', seed, '문장 구조', 75), instruction: '짧은 단어·구 타일을 배열해 완전한 문장을 만드세요.', prompt: 'What did the researchers find?', starter: 'The study showed', words: tiles.choices, answer: tiles.answer, explanation: `The study showed ${tiles.correct.join(' ')}` },
-    { ...base(`${id}-w1`, 'writing', 'email', 'Write an Email', seed, `${seed.service} · 실제 요청`, 420), difficulty: index % 2 === 0 ? 'B1' : 'B2', instruction: '상황과 독자를 고려해 분명하고 실용적인 이메일을 작성하세요.', prompt: `You are affected because ${seed.problem}. Write to ${seed.actor}. Explain the problem, respond to the plan to ${seed.action}, and ask one practical question about timing or access.` },
-    { ...base(`${id}-w2`, 'writing', 'discussion', 'Write for an Academic Discussion', seed, '학술 토론', 600), instruction: '입장을 밝히고 근거를 들며 다른 관점에 기여하세요.', prompt: `Professor Lee: ${seed.debate}`, passage: `Maya: The evidence suggests that ${seed.finding}.\nTheo: We should also consider that ${seed.counterpoint}.` },
-    { ...base(`${id}-s0`, 'speaking', 'repeat', 'Listen and Repeat', seed, `${seed.service} · 짧은 안내`, 12), difficulty: 'B1', instruction: '짧은 문장을 듣고 준비 시간 없이 그대로 말하세요.', audioText: seed.repeatSimple },
-    { ...base(`${id}-s1`, 'speaking', 'repeat', 'Listen and Repeat', seed, `${seed.service} · 긴 안내`, 16), difficulty: seed.difficulty === 'C1' ? 'C1' : 'B2', instruction: '조금 더 긴 문장을 의미 단위와 리듬을 유지해 반복하세요.', audioText: `Because ${seed.problem}, ${seed.actor} will ${seed.action}.` },
-    { ...base(`${id}-s2`, 'speaking', 'interview', 'Take an Interview', seed, '친숙한 경험', 45), difficulty: index % 2 === 0 ? 'B1' : 'B2', instruction: '개인 경험이나 관찰을 자연스럽게 설명하세요.', audioText: `Tell me about ${seed.personal}. What happened, and why did it matter to you?` },
-    { ...base(`${id}-s3`, 'speaking', 'interview', 'Take an Interview', seed, '의견과 이유', 45), instruction: '입장을 밝히고 친숙한 예를 덧붙이세요.', audioText: `${seed.debate} Explain your view with a familiar example.` },
+    { ...base(`${id}-w0`, 'writing', 'sentence-build', 'Build a Sentence', seed, sentencePattern.grammarFocus, 75), instruction: '문맥에 맞는 문장이 되도록 모든 단어와 짧은 구를 배열하세요.', prompt: sentencePattern.prompt, starter: sentencePattern.starter, words: tiles.choices, answer: tiles.answer, explanation: `${sentencePattern.starter} ${tiles.correct.join(' ')}`, grammarFocus: sentencePattern.grammarFocus },
+    { ...base(`${id}-w1`, 'writing', 'email', 'Write an Email', seed, `${seed.service} · 실제 요청`, 420), difficulty: index % 2 === 0 ? 'B1' : 'B2', instruction: '상황과 독자를 고려해 분명하고 실용적인 이메일을 작성하세요.', prompt: buildEmailPrompt({ ...seed, service: seed.service, action: seed.action }, index + 53) },
+    { ...base(`${id}-w2`, 'writing', 'discussion', 'Write for an Academic Discussion', seed, '학술 토론', 600), instruction: '입장을 밝히고 근거를 들며 다른 관점에 기여하세요.', prompt: discussion.prompt, passage: discussion.passage },
+    ...repeatScenario.map((audioText, sequenceIndex) => ({ ...base(`${id}-s-r${sequenceIndex}`, 'speaking', 'repeat', 'Listen and Repeat', seed, `${seed.service} · 단계별 안내`, sequenceIndex < 2 ? 12 : 16), difficulty: sequenceIndex < 2 ? 'B1' : seed.difficulty, instruction: '같은 안내 상황에서 길이와 구조가 달라지는 문장을 한 번 듣고 반복하세요.', audioText, scenarioId: `${id}-repeat`, stimulusGroupId: `${id}-repeat`, sequenceIndex })),
+    ...interviewScenario.map((audioText, sequenceIndex) => ({ ...base(`${id}-s-i${sequenceIndex}`, 'speaking', 'interview', 'Take an Interview', seed, '연결형 인터뷰', 45), instruction: '같은 주제의 인터뷰 질문에 구체적인 이유와 사례를 들어 답하세요.', audioText, scenarioId: `${id}-interview`, stimulusGroupId: `${id}-interview`, sequenceIndex })),
   ]
 })
 

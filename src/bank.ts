@@ -1,11 +1,38 @@
 import type { BaseItem, Section } from './types'
-import { BASE_CONTEXT_TOPIC_COUNT, CONTEXT_ITEMS } from './contextBank'
-import { EXPANSION_ITEMS, EXPANSION_TOPIC_COUNT } from './expansionBank'
-import { NEW_TOPIC_COUNT, NEW_TOPIC_ITEMS } from './newTopicBank'
+import { AUTHORED_BATCH_TWO_ITEMS } from './authoredBatchTwo'
+import { AUTHORED_FORM_03_ITEMS } from './authoredForm03'
+import { AUTHORED_FORM_04_ITEMS } from './authoredForm04'
+import { AUTHORED_FORM_05_ITEMS } from './authoredForm05'
+import { AUTHORED_FORM_06_ITEMS } from './authoredForm06'
+import { AUTHORED_FORM_07_ITEMS } from './authoredForm07'
+import { AUTHORED_FORM_08_ITEMS } from './authoredForm08'
+import { AUTHORED_FORM_09_ITEMS } from './authoredForm09'
+import { AUTHORED_FORM_10_ITEMS } from './authoredForm10'
+import { AUTHORED_FORM_11_ITEMS } from './authoredForm11'
+import { AUTHORED_FORM_12_ITEMS } from './authoredForm12'
+import { AUTHORED_FORM_13_ITEMS } from './authoredForm13'
+import { AUTHORED_FORM_14_ITEMS } from './authoredForm14'
+import { AUTHORED_FORM_15_ITEMS } from './authoredForm15'
+import { AUTHORED_FORM_16_ITEMS } from './authoredForm16'
+import { AUTHORED_FORM_17_ITEMS } from './authoredForm17'
+import { AUTHORED_FORM_18_ITEMS } from './authoredForm18'
+import { AUTHORED_FORM_19_ITEMS } from './authoredForm19'
+import { AUTHORED_FORM_20_ITEMS } from './authoredForm20'
+import { AUTHORED_FORM_21_ITEMS } from './authoredForm21'
+import { AUTHORED_FORM_22_ITEMS } from './authoredForm22'
+import {
+  AUTHORED_FORM_23_ITEMS, AUTHORED_FORM_24_ITEMS, AUTHORED_FORM_25_ITEMS, AUTHORED_FORM_26_ITEMS,
+  AUTHORED_FORM_27_ITEMS, AUTHORED_FORM_28_ITEMS, AUTHORED_FORM_29_ITEMS, AUTHORED_FORM_30_ITEMS,
+} from './authoredForms23to30'
+import { materializeAuthoredForms } from './authoredForms'
+import { AUTHORED_CONTEXT_ITEMS } from './contextBank'
+import { AUTHORED_READING_SUPPLEMENT_ITEMS } from './authoredReadingSupplementBank'
+import { AUTHORED_SUPPLEMENT_ITEMS } from './authoredSupplementBank'
 import { prepareSentenceTiles } from './sentenceTiles'
+import { buildFullBlueprint, buildReadingBlueprint, buildSectionBlueprint, prepareQuestionBank } from './examBlueprint'
 
 type Difficulty = NonNullable<BaseItem['difficulty']>
-const make = (id: string, section: Section, kind: BaseItem['kind'], title: string, topic: string, difficulty: Difficulty, timeSeconds: number): BaseItem => ({ id, section, kind, title, topic, difficulty, timeSeconds, module: 1, instruction: '' })
+const make = (id: string, section: Section, kind: BaseItem['kind'], title: string, topic: string, difficulty: Difficulty, timeSeconds: number): BaseItem => ({ id, section, kind, title, topic, difficulty, timeSeconds, module: 1, instruction: '', sourceFamily: 'authored-core' })
 
 const CLOZE: Array<[string, Difficulty, string, string]> = [
   ['생태학', 'B1', 'Mangrove forests grow along tropical coastlines. Their tangled roots prot___ young fish and red___ the force of waves. The trees also cap___ carbon in coastal soils. When mangroves are rem___, communities become more vuln___ to storms. Restoration projects comb___ tree planting with limits on development. Residents often mon___ seedling survival and rep___ damaged areas. Successful programs imp___ biodiversity and human safety, making these forests val___ natural infrastructure.', 'ect|uce|ture|oved|erable|ine|itor|air|rove|uable'],
@@ -20,8 +47,8 @@ const CLOZE: Array<[string, Difficulty, string, string]> = [
 
 const DAILY: Array<[string, Difficulty, string, string, string[], number, string]> = [
   ['도서관', 'B1', 'The silent study floor will be closed Thursday morning for carpet cleaning. Reserved books can still be collected at the ground-floor service desk. Group rooms remain open.', 'Where should a student collect a reserved book?', ['On the silent floor', 'At the ground-floor desk', 'Inside a group room', 'At the cleaning office'], 1, 'Reserved books move to the ground-floor service desk.'],
-  ['교통', 'B1', 'From Monday through Wednesday, Route 8 buses will skip the Science Gate because of road repairs. Use the temporary stop beside the stadium.', 'Why will buses skip Science Gate?', ['A game', 'Road repairs', 'A timetable change', 'Low demand'], 1, 'The notice directly identifies road repairs.'],
-  ['식당', 'B1', 'Students who complete the dining survey before Friday will receive a drink voucher by email. The voucher is valid next week only.', 'When can the voucher be used?', ['Before Friday', 'Next week', 'Any time this term', 'Only today'], 1, 'It is valid next week only.'],
+  ['교통', 'B1', 'From Monday through Wednesday, Route 8 buses will skip the Science Gate because of road repairs. Use the temporary stop beside the stadium.', 'Why will buses skip Science Gate?', ['A sporting event nearby', 'Street work along the usual route', 'A permanent timetable revision', 'Insufficient passenger demand'], 1, 'Repair work on the road prevents buses from using the normal stop.'],
+  ['식당', 'B1', 'Students who complete the dining survey before Friday will receive a drink voucher by email. The voucher is valid next week only.', 'When can the voucher be used?', ['Before the survey deadline', 'During the following week', 'At any point in the term', 'On the day the survey is submitted'], 1, 'The valid period is the week after the current one.'],
   ['기숙사', 'B2', 'The residence desk accepts ordinary parcels but has no secure space for items longer than one meter. Residents expecting a large package must meet the courier in the lobby.', 'What can be inferred about a long package?', ['It is returned.', 'A fee is charged.', 'The resident receives it personally.', 'It goes to a classroom.'], 2, 'Long items cannot be securely stored at the desk.'],
   ['연구 참여', 'B2', 'A sleep study seeks adults who do not work night shifts. Participants visit the lab twice and keep an online sleep diary for ten days.', 'Who is eligible?', ['A night-shift worker', 'Someone available for two visits', 'Someone refusing a diary', 'A child'], 1, 'Two visits are required, and night-shift workers are excluded.'],
   ['공연', 'B1', 'Tonight’s outdoor concert has moved to Hall C because rain is expected. Existing tickets remain valid, but seating is first come, first served.', 'What changed?', ['The performers', 'The price', 'The location', 'The start time'], 2, 'The concert moved indoors to Hall C.'],
@@ -29,13 +56,13 @@ const DAILY: Array<[string, Difficulty, string, string, string[], number, string
   ['체육관', 'B1', 'Lane swimming ends at 4:30 p.m. Friday to prepare for a competition. The fitness room and indoor track keep regular hours.', 'Which facility closes early?', ['The fitness room', 'The track', 'The swimming lanes', 'The whole center'], 2, 'Only lane swimming ends early.'],
   ['IT 보안', 'B2', 'The university will never ask for your password by email. Forward suspicious login requests to campus security and then delete them.', 'What should a student do with a suspicious request?', ['Reply with a password', 'Open its link', 'Forward it to security', 'Post it publicly'], 2, 'The alert instructs forwarding to security.'],
   ['장학금', 'B2', 'Travel grant applications require a budget, a faculty recommendation, and proof that a conference paper was accepted. Draft papers do not satisfy the acceptance requirement.', 'Which document fails the requirement?', ['An acceptance letter', 'A recommendation', 'A budget', 'A draft without acceptance'], 3, 'A draft alone does not prove acceptance.'],
-  ['봉사', 'B2', 'River-cleanup volunteers should bring water and closed shoes. The event proceeds in light rain but is postponed if lightning is reported.', 'When is the event postponed?', ['No gloves', 'Light rain', 'Lightning', 'Low water'], 2, 'Lightning, not light rain, triggers postponement.'],
-  ['건강센터', 'B1', 'Vaccination appointments are available online. Walk-in service is reserved for students with accessibility needs or physician referrals.', 'Who may walk in?', ['Any student', 'Only employees', 'Students with accessibility needs', 'Only travelers'], 2, 'Accessibility needs are explicitly eligible.'],
+  ['봉사', 'B2', 'River-cleanup volunteers should bring water and closed shoes. The event proceeds in light rain but is postponed if lightning is reported.', 'When is the event postponed?', ['When volunteers lack gloves', 'During a light shower', 'When electrical storm activity is reported', 'When the river level is low'], 2, 'An electrical storm, rather than ordinary rain, triggers postponement.'],
+  ['건강센터', 'B1', 'Vaccination appointments are available online. Walk-in service is reserved for students with accessibility needs or physician referrals.', 'Who may walk in?', ['Any currently enrolled learner', 'University employees only', 'Learners requiring disability-related access accommodations', 'Students preparing to travel'], 2, 'The exception includes people who need an accessible service arrangement.'],
 ]
 
 const ACADEMIC: Array<[string, Difficulty, string, [string, string[], number, string], [string, string[], number, string]]> = [
   ['생물학', 'B2', 'Some desert plants open leaf pores only at night. Carbon dioxide enters while temperatures are lower, so less water is lost. The gas is stored temporarily and used for photosynthesis after sunrise. This strategy saves water but limits carbon intake, so these plants often grow slowly.', ['Why do the pores open at night?', ['To absorb sunlight', 'To reduce water loss', 'To release oxygen', 'To raise temperature'], 1, 'Cooler conditions reduce evaporation.'], ['What is one cost?', ['No photosynthesis', 'Slow growth', 'Frozen leaves', 'More predators'], 1, 'Limited carbon intake restricts growth.']],
-  ['지질학', 'B2', 'River deltas form where flowing water enters a slower lake or ocean. As the current loses energy, sediment accumulates. Dams may reduce the sediment supply, while sea-level rise and land subsidence remove delta surfaces. A delta can therefore shrink even when the river still reaches the coast.', ['Why does sediment accumulate?', ['The current loses energy.', 'The ocean loses salt.', 'The river warms.', 'Plants remove minerals.'], 0, 'Slow water carries less sediment.'], ['Why can a delta shrink?', ['Rivers reverse.', 'Dams trap sediment.', 'Sand dissolves.', 'Channels stop dividing.'], 1, 'Dams reduce material that rebuilds the delta.']],
+  ['지질학', 'B2', 'River deltas form where flowing water enters a slower lake or ocean. As the current loses energy, sediment accumulates. Dams may reduce the sediment supply, while sea-level rise and land subsidence remove delta surfaces. A delta can therefore shrink even when the river still reaches the coast.', ['Why does sediment accumulate?', ['Slower water can no longer transport as much material.', 'The receiving ocean becomes less salty.', 'The river temperature rises near the coast.', 'Plants extract minerals from the channel.'], 0, 'A weaker current drops material it previously carried.'], ['Why can a delta shrink?', ['Rivers reverse.', 'Dams trap sediment.', 'Sand dissolves.', 'Channels stop dividing.'], 1, 'Dams reduce material that rebuilds the delta.']],
   ['인지과학', 'C1', 'People can miss a visible object while concentrating on another demanding task. This inattentional blindness does not mean the eyes failed to receive the image. Limited processing resources were allocated elsewhere. Confidence in observation can therefore exceed actual awareness.', ['What does the effect show?', ['Vision always stops.', 'Visible information may not reach awareness.', 'Attention is unlimited.', 'Confidence improves vision.'], 1, 'The image is received but not consciously processed.'], ['Why mention confidence?', ['People may overestimate what they noticed.', 'Confidence prevents distraction.', 'Vision equals hearing.', 'Complex scenes should be avoided.'], 0, 'Certainty does not guarantee complete awareness.']],
   ['고고학', 'B2', 'Microscopic traces on pottery reveal how vessels were used. Starch grains can identify plants, while absorbed fats may indicate dairy products or meat. Residues rarely provide a complete recipe, and contamination must be excluded. Combined with vessel shape and location, they reveal cooking and trade practices.', ['What can residues show?', ['Every vessel’s exact age', 'Foods processed in a pot', 'The potter’s name', 'A complete recipe'], 1, 'Starch and fats point to past foods.'], ['Why consider contamination?', ['Modern material could distort evidence.', 'All pots were painted.', 'Shape changes underground.', 'Recipes are too detailed.'], 0, 'Later substances may be mistaken for ancient traces.']],
   ['음향학', 'C1', 'Noise-canceling headphones measure incoming noise and produce a wave with nearly the opposite pattern. When the waves meet, pressure changes partially cancel. The method is less effective for sudden or high-frequency sounds, so physical padding remains important.', ['How does cancellation work?', ['It creates light.', 'It produces an opposing wave.', 'It stops vibration speed.', 'It blocks the microphone.'], 1, 'Opposing pressure patterns partially cancel.'], ['Why is padding useful?', ['Electronics cannot reduce every sound.', 'It creates power.', 'Microphones work only outside.', 'Low sounds damage circuits.'], 0, 'Sharp and high sounds are difficult to cancel.']],
@@ -74,10 +101,9 @@ const LISTENING: Array<[string, string, Difficulty, string, [string, string[], n
   ['Listen to an Academic Talk', '건축사', 'B2', 'Before electricity, factories used northern-facing sawtooth roof windows. They admitted diffuse light without intense afternoon heat. Modern architects sometimes reuse the form for historical character even when it is no longer technically necessary.', ['Why face windows north?', ['Direct heat', 'Steady diffuse light', 'Hide equipment', 'Support lamps'], 1, 'Northern light reduces glare and heat.'], ['Why reuse the form today?', ['Historical association', 'Flat roofs are banned.', 'No electricity', 'No heat'], 0, 'The shape signals industrial history.']],
 ]
 
-const SENTENCES: Array<[string, string, string[]]> = [
-  ['Did the workshop help?', 'It showed me', ['how', 'to organize', 'the evidence', 'more clearly']], ['Why was the trail closed?', 'The ranger explained', ['that', 'heavy rain', 'had damaged', 'the bridge']], ['Are you joining the club?', 'I would join', ['if', 'the meetings', 'did not conflict', 'with my lab']], ['Who recommended this?', 'It was my advisor', ['who', 'suggested', 'that I read', 'it first']], ['How was the tour?', 'The objects', ['that the curator', 'showed us', 'were', 'well preserved']], ['Why are results uncertain?', 'We do not know', ['whether', 'the sample', 'was large enough', 'to represent the population']], ['Can we submit tomorrow?', 'The instructions say', ['that', 'all applications', 'must be received', 'by midnight']], ['What surprised you?', 'I had not realized', ['how quickly', 'coastal landscapes', 'can change', 'after a storm']], ['Did Maya finish?', 'She would have finished', ['if', 'the parts', 'had arrived', 'on time']], ['Why delay the decision?', 'The committee wanted', ['to review', 'the evidence', 'that the report', 'provided']], ['Is the software difficult?', 'It is easier', ['than', 'the previous version', 'was', 'for beginners']], ['Why take statistics?', 'He needs it', ['so that', 'he can analyze', 'the survey data', 'correctly']], ['How did plants survive?', 'Their roots', ['were deep enough', 'to reach', 'water', 'below the soil']], ['Will it be outdoors?', 'It depends on', ['whether', 'the weather', 'remains dry', 'this evening']], ['Why revise the introduction?', 'My instructor suggested', ['that', 'I explain', 'the main question', 'first']], ['Was the internship useful?', 'It gave me', ['a chance', 'to apply', 'what I learned', 'in class']], ['Why are birds hard to count?', 'They move', ['so frequently', 'that observers', 'record', 'some twice']], ['Did the library buy it?', 'The librarian said', ['that', 'it was', 'too expensive', 'for the budget']], ['How can traffic fall?', 'One approach is', ['to improve', 'the bus network', 'before restricting', 'private cars']], ['Why did glass crack?', 'It was exposed', ['to', 'a sudden change', 'in temperature', 'during testing']],
+const SENTENCES: Array<[string, string, string[], string]> = [
+  ['Did the workshop help?', 'It showed me', ['how', 'to organize', 'the evidence', 'more clearly'], 'embedded-how-infinitive'], ['Why was the trail closed?', 'The ranger explained', ['that', 'heavy rain', 'had damaged', 'the bridge'], 'reported-past-perfect'], ['Are you joining the club?', 'I would join', ['if', 'the meetings', 'did not conflict', 'with my lab'], 'second-conditional'], ['Who recommended this?', 'It was my advisor', ['who', 'suggested', 'that I read', 'it first'], 'cleft-relative-clause'], ['How was the tour?', 'The objects', ['that the curator', 'showed us', 'were', 'well preserved'], 'relative-clause'], ['Why are results uncertain?', 'We do not know', ['whether', 'the sample', 'was large enough', 'to represent the population'], 'embedded-whether-clause'], ['Can we submit tomorrow?', 'The instructions say', ['that', 'all applications', 'must be received', 'by midnight'], 'reported-passive-clause'], ['What surprised you?', 'I had not realized', ['how quickly', 'coastal landscapes', 'can change', 'after a storm'], 'embedded-exclamation'], ['Did Maya finish?', 'She would have finished', ['if', 'the parts', 'had arrived', 'on time'], 'third-conditional'], ['Why delay the decision?', 'The committee wanted', ['to review', 'the evidence', 'that the report', 'provided'], 'infinitive-relative-clause'], ['Is the software difficult?', 'It is easier', ['than', 'the previous version', 'was', 'for beginners'], 'comparative-clause'], ['Why take statistics?', 'He needs it', ['so that', 'he can analyze', 'the survey data', 'correctly'], 'purpose-clause'], ['How did plants survive?', 'Their roots', ['were deep enough', 'to reach', 'water', 'below the soil'], 'enough-infinitive'], ['Will it be outdoors?', 'It depends on', ['whether', 'the weather', 'remains dry', 'this evening'], 'depends-whether-clause'], ['Why revise the introduction?', 'My instructor suggested', ['that', 'I explain', 'the main question', 'first'], 'mandative-that-clause'], ['Was the internship useful?', 'It gave me', ['a chance', 'to apply', 'what I learned', 'in class'], 'noun-infinitive-wh-clause'], ['Why are birds hard to count?', 'They move', ['so frequently', 'that observers', 'record', 'some twice'], 'so-that-result-clause'], ['Did the library buy it?', 'The librarian said', ['that', 'it was', 'too expensive', 'for the budget'], 'reported-too-adjective'], ['How can traffic fall?', 'One approach is', ['to improve', 'the bus network', 'before restricting', 'private cars'], 'infinitive-before-gerund'], ['Why did glass crack?', 'It was exposed', ['to', 'a sudden change', 'in temperature', 'during testing'], 'passive-prepositional-phrase'],
 ]
-const SENTENCE_DISTRACTORS = ['why', 'damages', 'unless', 'which', 'was', 'although', 'receiving', 'slowly', 'has', 'reviewed', 'were', 'because', 'reaching', 'if', 'explains', 'apply', 'when', 'being', 'improved', 'suddenly']
 
 const EMAILS: Array<[string, string]> = [
   ['수업', 'You missed a required laboratory because the campus shuttle broke down. Write to the instructor. Explain what happened, describe what work you missed, and ask how to make it up.'], ['기숙사', 'A noisy ventilation unit affects your sleep. Write to the residence manager. Describe when it occurs and request an inspection or temporary solution.'], ['연구', 'A shared dataset has unlabeled columns. Write to your partner. Explain the delay and propose a documentation method.'], ['도서관', 'A book listed as available is missing. Write to a librarian. Identify it, explain why you need it soon, and ask about alternatives.'], ['동아리', 'Your club received a smaller room than reserved. Write to the events office. Explain expected attendance and request another arrangement.'], ['인턴십', 'Your internship start conflicts with a final exam. Write to the coordinator with dates and two possible solutions.'], ['장학금', 'The portal marks an uploaded document as missing. Write to the scholarship office and request confirmation before the deadline.'], ['학회', 'A conference program misspells your name and title. Write to the organizer with the corrections and ask when the program will update.'],
@@ -109,10 +135,10 @@ const listening: BaseItem[] = [
   ...LISTENING.flatMap(([title, topic, difficulty, audioText, q1, q2], i) => [q1, q2].map(([prompt, options, answer, explanation], j) => ({ ...make(`l-set-${i}-${j}`, 'listening', 'listen-choice', title, topic, difficulty, 70), instruction: '오디오는 한 번 재생됩니다. 핵심 내용과 의도를 파악하세요.', audioText, prompt, options, answer, explanation }))),
 ]
 const writing: BaseItem[] = [
-  ...SENTENCES.map(([prompt, starter, source], i) => {
+  ...SENTENCES.map(([prompt, starter, source, grammarFocus], i) => {
     const id = `w-sentence-${i}`
-    const tiles = prepareSentenceTiles(source, id, i % 3 === 1 ? undefined : SENTENCE_DISTRACTORS[i])
-    return { ...make(id, 'writing', 'sentence-build', 'Build a Sentence', '문장 구조', i < 7 ? 'B1' : i < 15 ? 'B2' : 'C1', 75), instruction: '상자의 단어나 짧은 구를 옮겨 문맥에 맞는 문장을 만드세요.', prompt, starter, words: tiles.choices, answer: tiles.answer, explanation: `${starter} ${tiles.correct.join(' ')}` }
+    const tiles = prepareSentenceTiles(source, id)
+    return { ...make(id, 'writing', 'sentence-build', 'Build a Sentence', '문장 구조', i < 7 ? 'B1' : i < 15 ? 'B2' : 'C1', 75), instruction: '문맥에 맞는 문장이 되도록 모든 단어와 짧은 구를 배열하세요.', prompt, starter, words: tiles.choices, answer: tiles.answer, explanation: `${starter} ${tiles.correct.join(' ')}`, grammarFocus }
   }),
   ...EMAILS.map(([topic, prompt], i) => ({ ...make(`w-email-${i}`, 'writing', 'email', 'Write an Email', topic, i < 4 ? 'B1' : 'B2', 420), instruction: '목적과 독자를 고려해 이메일을 작성하세요.', prompt })),
   ...DISCUSSIONS.map(([topic, prompt, passage], i) => ({ ...make(`w-discussion-${i}`, 'writing', 'discussion', 'Write for an Academic Discussion', topic, i < 3 ? 'B1' : i < 6 ? 'B2' : 'C1', 600), instruction: '의견과 근거를 제시하고 다른 관점에 기여하세요.', prompt, passage })),
@@ -122,10 +148,10 @@ const speaking: BaseItem[] = [
   ...INTERVIEWS.flatMap(([topic, difficulty, questions], i) => questions.map((audioText, j) => ({ ...make(`s-interview-${i}-${j}`, 'speaking', 'interview', 'Take an Interview', topic, difficulty, 45), instruction: '면접 질문에 충분히 답하세요. 준비 시간은 없습니다.', audioText }))),
 ]
 
-export const QUESTION_BANK: BaseItem[] = [...reading, ...listening, ...writing, ...speaking, ...CONTEXT_ITEMS, ...EXPANSION_ITEMS, ...NEW_TOPIC_ITEMS]
-export const CONTEXT_TOPIC_COUNT = BASE_CONTEXT_TOPIC_COUNT + EXPANSION_TOPIC_COUNT + NEW_TOPIC_COUNT
+export const QUESTION_BANK: BaseItem[] = prepareQuestionBank([...reading, ...listening, ...writing, ...speaking, ...AUTHORED_CONTEXT_ITEMS, ...AUTHORED_READING_SUPPLEMENT_ITEMS, ...AUTHORED_SUPPLEMENT_ITEMS, ...AUTHORED_BATCH_TWO_ITEMS, ...AUTHORED_FORM_03_ITEMS, ...AUTHORED_FORM_04_ITEMS, ...AUTHORED_FORM_05_ITEMS, ...AUTHORED_FORM_06_ITEMS, ...AUTHORED_FORM_07_ITEMS, ...AUTHORED_FORM_08_ITEMS, ...AUTHORED_FORM_09_ITEMS, ...AUTHORED_FORM_10_ITEMS, ...AUTHORED_FORM_11_ITEMS, ...AUTHORED_FORM_12_ITEMS, ...AUTHORED_FORM_13_ITEMS, ...AUTHORED_FORM_14_ITEMS, ...AUTHORED_FORM_15_ITEMS, ...AUTHORED_FORM_16_ITEMS, ...AUTHORED_FORM_17_ITEMS, ...AUTHORED_FORM_18_ITEMS, ...AUTHORED_FORM_19_ITEMS, ...AUTHORED_FORM_20_ITEMS, ...AUTHORED_FORM_21_ITEMS, ...AUTHORED_FORM_22_ITEMS, ...AUTHORED_FORM_23_ITEMS, ...AUTHORED_FORM_24_ITEMS, ...AUTHORED_FORM_25_ITEMS, ...AUTHORED_FORM_26_ITEMS, ...AUTHORED_FORM_27_ITEMS, ...AUTHORED_FORM_28_ITEMS, ...AUTHORED_FORM_29_ITEMS, ...AUTHORED_FORM_30_ITEMS], { contextualizeDuplicatePrompts: false })
+export const CONTEXT_TOPIC_COUNT = new Set(QUESTION_BANK.map((item) => item.topic).filter(Boolean)).size
 const validateQuestionBank = () => {
-  if (QUESTION_BANK.length !== 1360) throw new Error(`Expected 1360 questions, received ${QUESTION_BANK.length}.`)
+  if (QUESTION_BANK.length !== 2922) throw new Error(`Expected 2922 directly authored questions, received ${QUESTION_BANK.length}.`)
   const ids = new Set(QUESTION_BANK.map((item) => item.id))
   if (ids.size !== QUESTION_BANK.length) throw new Error('Question IDs must be unique.')
   QUESTION_BANK.forEach((item) => {
@@ -136,20 +162,16 @@ const validateQuestionBank = () => {
   })
 }
 validateQuestionBank()
-const shuffled = <T,>(values: T[]) => { const result = [...values]; for (let i = result.length - 1; i > 0; i -= 1) { const value = new Uint32Array(1); crypto.getRandomValues(value); const j = value[0] % (i + 1); [result[i], result[j]] = [result[j], result[i]] } return result }
-const pick = (test: (item: BaseItem) => boolean, count: number, excludedIds: ReadonlySet<string>) => shuffled(QUESTION_BANK.filter((item) => test(item) && !excludedIds.has(item.id))).slice(0, count)
-const title = (value: string) => (item: BaseItem) => item.title === value
+export const AUTHORED_FORMS = materializeAuthoredForms(QUESTION_BANK)
 const NO_EXCLUSIONS = new Set<string>()
+export const buildReadingPracticeSet = (excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) => buildReadingBlueprint(QUESTION_BANK, excludedIds)
 
-export const buildFullPracticeSet = (excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) => [
-  ...pick((item) => item.section === 'reading' && item.kind === 'complete-words', 2, excludedIds), ...pick(title('Read in Daily Life'), 6, excludedIds), ...pick(title('Read an Academic Passage'), 8, excludedIds),
-  ...pick(title('Listen and Choose a Response'), 8, excludedIds), ...pick((item) => item.section === 'listening' && item.title !== 'Listen and Choose a Response', 8, excludedIds),
-  ...pick(title('Build a Sentence'), 10, excludedIds), ...pick(title('Write an Email'), 1, excludedIds), ...pick(title('Write for an Academic Discussion'), 1, excludedIds),
-  ...pick(title('Listen and Repeat'), 7, excludedIds), ...pick(title('Take an Interview'), 4, excludedIds),
-]
-export const buildSectionPractice = (section: Section, excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) => section === 'writing'
-  ? [...pick(title('Build a Sentence'), 10, excludedIds), ...pick(title('Write an Email'), 1, excludedIds), ...pick(title('Write for an Academic Discussion'), 1, excludedIds)]
-  : section === 'speaking'
-    ? [...pick(title('Listen and Repeat'), 7, excludedIds), ...pick(title('Take an Interview'), 4, excludedIds)]
-    : pick((item) => item.section === section, 16, excludedIds)
+export const countReadingScoredItems = (items: BaseItem[]) => items.reduce((total, item) => {
+  if (item.section !== 'reading') return total
+  if (item.kind !== 'complete-words') return total + 1
+  return total + String(item.answer || '').split('|').filter(Boolean).length
+}, 0)
+
+export const buildFullPracticeSet = (excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) => buildFullBlueprint(QUESTION_BANK, excludedIds)
+export const buildSectionPractice = (section: Section, excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) => buildSectionBlueprint(QUESTION_BANK, section, excludedIds)
 export const countBySection = (section: Section, excludedIds: ReadonlySet<string> = NO_EXCLUSIONS) => QUESTION_BANK.filter((item) => item.section === section && !excludedIds.has(item.id)).length

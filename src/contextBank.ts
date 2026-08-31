@@ -177,11 +177,21 @@ export const CONTEXT_ITEMS: BaseItem[] = BUNDLES.flatMap((bundle, bundleIndex) =
     ...base(`${prefix}-w1`, 'writing', 'discussion', 'Write for an Academic Discussion', bundle.topic, bundle.discussion.context, bundle.difficulty, 600),
     instruction: '두 관점을 연결하고 자신의 주장과 근거를 제시하세요.', prompt: bundle.discussion.prompt, passage: bundle.discussion.posts,
   }
-  const speaking = bundle.interview.questions.map((audioText, index) => ({
+  const interviewQuestions = [
+    ...bundle.interview.questions,
+    `Based on your response to “${bundle.interview.questions[0]},” what practical change would benefit students or communities most?`,
+    `What evidence would show that your response to “${bundle.interview.questions[1]}” led to a successful change?`,
+  ]
+  const speaking = interviewQuestions.map((audioText, index) => ({
     ...base(`${prefix}-s${index}`, 'speaking', 'interview', 'Take an Interview', bundle.topic, bundle.interview.context, bundle.difficulty, 45),
-    instruction: '질문에 직접 답하고 구체적인 이유나 사례를 덧붙이세요.', audioText,
+    instruction: '같은 주제의 질문에 직접 답하고 구체적인 이유나 사례를 덧붙이세요.', audioText,
+    scenarioId: `${prefix}-interview`, stimulusGroupId: `${prefix}-interview`, sequenceIndex: index,
   }))
   return [...reading, ...listening, email, discussion, ...speaking]
 })
+
+export const AUTHORED_CONTEXT_ITEMS = CONTEXT_ITEMS
+  .filter((item) => item.kind !== 'interview')
+  .map((item) => ({ ...item, sourceFamily: 'authored-context' }))
 
 export const BASE_CONTEXT_TOPIC_COUNT = BUNDLES.length
