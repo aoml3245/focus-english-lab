@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowIcon, Brand } from './components'
+import { playReadyChime } from './readyChime'
 import { browserSupportsWebGPU, getActiveBrowserTTSBackend, getBrowserKokoroCacheState, getBrowserTTSFallbackReason, getBrowserTTSRuntimeInfo, getVoiceProfile, hasLocalTtsServer, isIOSBrowser, loadTTSBackendPreference, loadVoiceProfileId, playTTS, prepareSpeech, resolveTTSBackend, saveTTSBackendPreference, saveVoiceProfileId, stopTTS, VOICE_PROFILES, type TTSBackendPreference, type TTSProgressDetail, type VoiceProfileId } from './tts'
 import { APP_VERSION } from './version'
 import { clearTTSDiagnostics, formatTTSDiagnostics, getTTSDiagnostics, subscribeTTSDiagnostics, type TTSDiagnosticEvent } from './ttsDiagnostics'
@@ -52,6 +53,7 @@ export default function VoiceSettings({ onBack }: { onBack: () => void }) {
       if (controller.signal.aborted) return
       setPreviewState({ id, phase: 'ready' })
       setStatus(`${getVoiceProfile(id).name} 미리 듣기가 준비됐습니다. 재생 버튼을 눌러 주세요.`)
+      void playReadyChime()
       if (!localTts && id !== 'system') setModelProgress({ phase: 'ready', percent: 100, cached: true })
     } catch (error) {
       if (controller.signal.aborted) return

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { playReadyChime } from './readyChime'
 import { loadVoiceProfileId, playTTS, prepareSpeech, stopTTS, type SpeechMode } from './tts'
 
 export const HOME_NAVIGATION_EVENT = 'focus-english-lab:navigate-home'
@@ -63,6 +64,7 @@ export function AudioPrompt({ text, speechMode, onPlaybackChange }: { text: stri
         if (controller.signal.aborted) return
         setState('ready')
         setStatus('음성 준비가 끝났습니다. 재생 버튼을 눌러 주세요.')
+        void playReadyChime()
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return

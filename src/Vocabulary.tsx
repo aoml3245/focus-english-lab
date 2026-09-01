@@ -3,6 +3,7 @@ import { ArrowIcon, Brand } from './components'
 import { loadFavorites, loadPersonalWords, normalizeWord, requestVocabulary, saveFavorites, type LearningEntry } from './learning'
 import PersonalVocabularyWorkspace from './PersonalVocabularyWorkspace'
 import { removePersonalWordCompletely } from './personalVocabulary'
+import { playReadyChime } from './readyChime'
 import { loadVoiceProfileId, playTTS, prepareSpeech, stopTTS } from './tts'
 import type { VocabularyDownloadProgress } from './cloudSync'
 
@@ -120,6 +121,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
         }, controller.signal)
         if (request !== audioRequest.current || controller.signal.aborted) return
         setAudio({ key, phase: 'ready', status: '음성 준비가 끝났습니다. 재생을 눌러 주세요.' })
+        void playReadyChime()
       } catch (error) {
         if (request !== audioRequest.current || controller.signal.aborted) return
         setAudio({ key, phase: 'error', status: error instanceof Error ? error.message : '음성을 준비하지 못했습니다.' })
