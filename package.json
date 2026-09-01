@@ -1,7 +1,7 @@
 {
   "name": "focus-english-lab",
   "private": true,
-  "version": "0.1.63",
+  "version": "0.1.64",
   "description": "Independent browser-based English proficiency practice with original questions, local AI coaching, and optional in-browser TTS.",
   "license": "MIT",
   "repository": {
