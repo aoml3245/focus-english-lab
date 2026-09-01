@@ -45,12 +45,53 @@ const DEFAULT_CONFIG: LocalLlmConfig = { endpoint: 'http://127.0.0.1:11434', mod
 
 let vocabularyRequest: Promise<LearningEntry[]> | null = null
 
+type PublicVocabularyManifest = {
+  entryCount: number
+  totalBytes: number
+  chunks: Array<{ file: string; count: number; bytes: number; sha256: string }>
+}
+
+async function fetchPublicVocabulary(onProgress?: (progress: import('./cloudSync').VocabularyDownloadProgress) => void) {
+  const manifestUrl = new URL('data/vocabulary/manifest.json', document.baseURI)
+  onProgress?.({ phase: 'manifest', completedChunks: 0, totalChunks: 0, downloadedBytes: 0, loadedEntries: 0, cachedChunks: 0 })
+  const manifestResponse = await fetch(manifestUrl, { cache: 'no-store' })
+  if (!manifestResponse.ok) throw new Error('공개 기본 단어장 정보를 불러오지 못했습니다.')
+  const manifest = await manifestResponse.json() as PublicVocabularyManifest
+  if (!manifest.entryCount || !Array.isArray(manifest.chunks) || !manifest.chunks.length) throw new Error('공개 기본 단어장 정보가 올바르지 않습니다.')
+  const chunkEntries: LearningEntry[][] = new Array(manifest.chunks.length)
+  let nextIndex = 0
+  let completedChunks = 0
+  let downloadedBytes = 0
+  let loadedEntries = 0
+  onProgress?.({ phase: 'downloading', completedChunks, totalChunks: manifest.chunks.length, downloadedBytes, totalBytes: manifest.totalBytes, loadedEntries, cachedChunks: 0 })
+  const worker = async () => {
+    while (nextIndex < manifest.chunks.length) {
+      const index = nextIndex++
+      const chunk = manifest.chunks[index]
+      const url = new URL(chunk.file, manifestUrl)
+      url.searchParams.set('sha', chunk.sha256)
+      const response = await fetch(url)
+      if (!response.ok) throw new Error(`공개 기본 단어장 ${index + 1}번 조각을 불러오지 못했습니다.`)
+      const entries = await response.json() as LearningEntry[]
+      if (!Array.isArray(entries) || entries.length !== chunk.count) throw new Error(`공개 기본 단어장 ${index + 1}번 조각이 손상되었습니다.`)
+      chunkEntries[index] = entries
+      completedChunks += 1
+      downloadedBytes += chunk.bytes
+      loadedEntries += entries.length
+      onProgress?.({ phase: 'downloading', completedChunks, totalChunks: manifest.chunks.length, downloadedBytes, totalBytes: manifest.totalBytes, loadedEntries, cachedChunks: 0 })
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, manifest.chunks.length) }, () => worker()))
+  onProgress?.({ phase: 'processing', completedChunks, totalChunks: manifest.chunks.length, downloadedBytes, totalBytes: manifest.totalBytes, loadedEntries, cachedChunks: 0 })
+  const entries = chunkEntries.flat()
+  if (entries.length !== manifest.entryCount) throw new Error('공개 기본 단어장 항목 수가 일치하지 않습니다.')
+  onProgress?.({ phase: 'done', completedChunks, totalChunks: manifest.chunks.length, downloadedBytes, totalBytes: manifest.totalBytes, loadedEntries: entries.length, cachedChunks: 0 })
+  return entries
+}
+
 export function requestVocabulary(onProgress?: (progress: import('./cloudSync').VocabularyDownloadProgress) => void) {
   vocabularyRequest ||= (async () => {
-    if (import.meta.env.PROD || import.meta.env.VITE_FIREBASE_PROJECT_ID) {
-      const { fetchPrivateVocabulary } = await import('./cloudSync')
-      return JSON.parse(await (await fetchPrivateVocabulary(onProgress)).text()) as LearningEntry[]
-    }
+    if (import.meta.env.PROD) return fetchPublicVocabulary(onProgress)
     const response = await fetch('/__private/vocabulary.json')
     if (!response.ok) throw new Error('단어장 데이터를 불러오지 못했습니다.')
     return response.json() as Promise<LearningEntry[]>

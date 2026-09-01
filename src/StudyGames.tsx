@@ -140,7 +140,7 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
     <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header>
     <main>
       {mastery ? <MasteryCourse entries={studyDeck} progress={mastery} onProgress={setMastery} onAttempt={(word, isCorrect) => { if (personalReview) recordPersonalWordAttempt(word, isCorrect) }} onComplete={finishPersonalMastery} onStudyAgain={repeatDeckStudy} onNewCourse={startMemorizing} onExit={restartSetup} /> : memorizing ? <MemorizationDeck entries={studyDeck} page={deckPage} note={selectionNote} onPage={setDeckPage} onStartMastery={startMastery} /> : !questions.length ? <>
-        <section className="study-hero"><span>VOCABULARY LAB</span><h1>외우는 대신,<br />꺼내 쓰는 연습.</h1><p>29,976개 단어장에서 뜻과 동의어를 확인하고, 문제 문맥 문장으로 해석과 영작을 연습합니다. 답은 언제든 바로 볼 수 있습니다.</p></section>
+        <section className="study-hero"><span>VOCABULARY LAB</span><h1>외우는 대신,<br />꺼내 쓰는 연습.</h1><p>직접 검수를 마친 공개 단어장에서 뜻과 동의어를 확인하고, 문제 문맥 문장으로 해석과 영작을 연습합니다. 답은 언제든 바로 볼 수 있습니다.</p></section>
         <section className="study-mode-grid" aria-label="학습 게임 선택">
           <button className={game === 'vocabulary' ? 'study-mode study-mode--active' : 'study-mode'} onClick={() => setGame('vocabulary')}><span>01</span><strong>단어 시험</strong><p>뜻 입력 · 동의어 선택 · 철자 회상</p></button>
           <button className={game === 'sentence' ? 'study-mode study-mode--active' : 'study-mode'} onClick={() => setGame('sentence')}><span>02</span><strong>문장 미니게임</strong><p>문장 해석 · 한국어를 영어로 영작</p></button>

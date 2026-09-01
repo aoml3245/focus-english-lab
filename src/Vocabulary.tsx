@@ -136,7 +136,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
   return <div className="vocab-page">
     <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header>
     <main>
-      <div className="vocab-hero"><div><h1>문장으로 익히는 단어장</h1><p>문제은행의 문맥 어휘와 공개 사전에서 품질 조건을 통과한 약 3만 개를 한곳에 정리했습니다. 단어와 예문은 음성 설정에서 고른 목소리로 들을 수 있습니다.</p></div><dl><div><dt>전체 어휘</dt><dd>{vocabulary.length ? vocabulary.length.toLocaleString('en-US') : '—'}</dd></div><div><dt>학술 핵심</dt><dd>{vocabulary.length ? academicCount.toLocaleString('en-US') : '—'}</dd></div><div><dt>저장한 단어</dt><dd>{favorites.size.toLocaleString('en-US')}</dd></div></dl></div>
+      <div className="vocab-hero"><div><h1>문장으로 익히는 단어장</h1><p>문제은행의 문맥 어휘와 공개 사전에서 직접 검수를 마친 어휘를 1,000개 단위로 공개합니다. 단어와 예문은 음성 설정에서 고른 목소리로 들을 수 있습니다.</p></div><dl><div><dt>전체 어휘</dt><dd>{vocabulary.length ? vocabulary.length.toLocaleString('en-US') : '—'}</dd></div><div><dt>학술 핵심</dt><dd>{vocabulary.length ? academicCount.toLocaleString('en-US') : '—'}</dd></div><div><dt>저장한 단어</dt><dd>{favorites.size.toLocaleString('en-US')}</dd></div></dl></div>
       {vocabulary.length > 0 && downloadProgress?.phase === 'done' && <VocabularyCacheSummary progress={downloadProgress} />}
       <PersonalVocabularyWorkspace vocabulary={dictionaryVocabulary} onLibraryChanged={() => setLibraryVersion((value) => value + 1)} />
       <section className="vocab-controls" aria-label="단어장 검색과 필터">

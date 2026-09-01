@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { CLOUD_SYNC_CONFIGURED, createSharingCode, deleteAllPersonalLearningData, deleteUnusedInvite, removeSharingPartner, resolveCloudAccess, signOutOfCloud, syncPrivateLearningData, uploadPrivateVocabulary, watchCloudUser, type CloudAccess } from './cloudSync'
+import { CLOUD_SYNC_CONFIGURED, createSharingCode, deleteAllPersonalLearningData, deleteUnusedInvite, joinWithSharingCode, removeSharingPartner, resolveCloudAccess, signInToCloud, signOutOfCloud, syncPrivateLearningData, uploadPrivateVocabulary, watchCloudUser, type CloudAccess } from './cloudSync'
 
 export default function CloudSyncSettings() {
   const [user, setUser] = useState<User | null>(null)
   const [access, setAccess] = useState<CloudAccess | null>(null)
   const [busy, setBusy] = useState(false)
+  const [code, setCode] = useState('')
   const [message, setMessage] = useState('개인 기록은 계정별로 분리하고, 공유 단어 목록만 두 사용자에게 동기화합니다.')
   const [invite, setInvite] = useState<{ token: string; expiresAt: Date } | null>(null)
 
   const refresh = async (nextUser: User) => setAccess(await resolveCloudAccess(nextUser))
-  useEffect(() => watchCloudUser((nextUser) => { setUser(nextUser); if (nextUser) void refresh(nextUser) }), [])
+  useEffect(() => watchCloudUser((nextUser) => { setUser(nextUser); setAccess(null); if (nextUser) void refresh(nextUser).catch((error) => setMessage(error instanceof Error ? error.message : '계정 권한을 확인하지 못했습니다.')) }), [])
   if (!CLOUD_SYNC_CONFIGURED) return <p className="settings-status settings-status--error">Firebase 프로젝트 연결 후 이 기능이 활성화됩니다.</p>
-  if (!user || !access) return <p className="settings-status">로그인 상태를 확인하고 있습니다.</p>
+  if (!user) return <div className="cloud-settings"><p className="settings-status">공개 기본 단어장은 로그인 없이 사용할 수 있습니다. 개인 단어장과 학습 기록을 여러 기기에 동기화하려면 로그인하세요.</p><button className="button button--primary" disabled={busy} onClick={() => { setBusy(true); void signInToCloud().catch((error) => setMessage(error instanceof Error ? error.message : '로그인하지 못했습니다.')).finally(() => setBusy(false)) }}>{busy ? '로그인 확인 중…' : 'Google 계정으로 로그인'}</button>{message && <p className="settings-status" role="status">{message}</p>}</div>
+  if (!access) return <p className="settings-status">로그인 계정의 동기화 권한을 확인하고 있습니다.</p>
+  if (!access.authorized) return <div className="cloud-settings"><p className="settings-status">이 계정은 아직 개인 학습 그룹에 연결되지 않았습니다. 소유자가 만든 공유 코드를 입력하세요.</p><div className="auth-gate__form"><label><span>공유 코드</span><input value={code} onChange={(event) => setCode(event.target.value)} autoCapitalize="characters" autoCorrect="off" placeholder="공유 코드를 입력하세요" /></label><button className="button button--primary" disabled={busy || !code.trim()} onClick={() => { setBusy(true); void joinWithSharingCode(user, code).then(async (next) => { setAccess(next); await syncPrivateLearningData(user); setMessage('개인 학습 그룹에 연결했습니다.') }).catch((error) => setMessage(error instanceof Error ? error.message : '공유 그룹에 연결하지 못했습니다.')).finally(() => setBusy(false)) }}>{busy ? '연결 중…' : '공유 그룹 연결'}</button></div><button className="text-button" onClick={() => void signOutOfCloud()}>다른 계정으로 로그인</button>{message && <p className="settings-status" role="status">{message}</p>}</div>
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true)

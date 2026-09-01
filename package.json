@@ -1,7 +1,7 @@
 {
   "name": "focus-english-lab",
   "private": true,
-  "version": "0.1.37",
+  "version": "0.1.50",
   "description": "Independent browser-based English proficiency practice with original questions, local AI coaching, and optional in-browser TTS.",
   "license": "MIT",
   "repository": {
@@ -17,6 +17,7 @@
     "vocab:review": "python3 scripts/review_vocabulary.py",
     "vocab:review:durable": "scripts/run_vocabulary_review.sh",
     "vocab:review:sample": "python3 scripts/review_vocabulary.py --limit 120 --merge --output private/vocabulary.json --report work/vocabulary/semantic-quality-report-sample.json --selection-cache work/vocabulary/semantic-selection-sample.jsonl --context-cache work/vocabulary/semantic-context-sample.jsonl --draft-cache work/vocabulary/semantic-draft-sample.jsonl --validation-cache work/vocabulary/semantic-validation-sample.jsonl --cache work/vocabulary/semantic-review-sample.jsonl",
+    "vocab:export:public": "python3 scripts/export_public_vocabulary.py",
     "prebuild": "npm run prepare:ort",
     "build": "tsc -b && vite build",
     "postbuild": "node scripts/assert-no-jsep-assets.mjs",

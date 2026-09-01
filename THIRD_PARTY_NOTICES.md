@@ -1,6 +1,6 @@
 # Third-party vocabulary data notices
 
-The generated private vocabulary dataset incorporates lexical metadata from the following sources.
+The generated public vocabulary checkpoints and private build artifact incorporate lexical metadata from the following sources.
 
 ## Open English–Korean Dictionary
 
@@ -20,7 +20,7 @@ The derived lexical dataset is distributed under CC BY-SA 4.0. This notice does 
 - Earlier retained fields may also use Princeton WordNet under its license: https://wordnet.princeton.edu/license-and-commercial-use
 - Used fields: English sense definitions, part-of-speech labels, lexical domains, and same-sense synonym candidates.
 
-The public repository does not include downloaded dictionary databases, research PDFs, model weights, or the local generation environment. The reproducible selection and quality gates are implemented in `scripts/build_vocabulary.py`. Academic-core labels combine corpus evidence with CEFR level and dictionary frequency; they are project study aids, not an official TOEFL vocabulary classification.
+The public repository does not include downloaded dictionary databases, the full private build artifact, review ledgers, research PDFs, model weights, or the local generation environment. Public browser shards contain only entries that reached a completed 1,000-entry direct-review checkpoint. Academic-core labels combine corpus evidence with CEFR level and dictionary frequency; they are project study aids, not an official TOEFL vocabulary classification.
 
 ## Kokoro 82M text-to-speech
 
