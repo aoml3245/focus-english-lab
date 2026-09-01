@@ -51,6 +51,23 @@ type PublicVocabularyManifest = {
   chunks: Array<{ file: string; count: number; bytes: number; sha256: string }>
 }
 
+async function fetchPublicVocabularyChunk(url: URL, expectedCount: number, index: number) {
+  let failure: unknown = null
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(url, { cache: attempt === 0 ? 'default' : 'reload' })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const entries = await response.json() as LearningEntry[]
+      if (!Array.isArray(entries) || entries.length !== expectedCount) throw new Error('항목 수 불일치')
+      return entries
+    } catch (error) {
+      failure = error
+      if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)))
+    }
+  }
+  throw new Error(`공개 기본 단어장 ${index + 1}번 조각을 불러오지 못했습니다.`, { cause: failure })
+}
+
 async function fetchPublicVocabulary(onProgress?: (progress: import('./cloudSync').VocabularyDownloadProgress) => void) {
   const manifestUrl = new URL('data/vocabulary/manifest.json', document.baseURI)
   onProgress?.({ phase: 'manifest', completedChunks: 0, totalChunks: 0, downloadedBytes: 0, loadedEntries: 0, cachedChunks: 0 })
@@ -70,10 +87,7 @@ async function fetchPublicVocabulary(onProgress?: (progress: import('./cloudSync
       const chunk = manifest.chunks[index]
       const url = new URL(chunk.file, manifestUrl)
       url.searchParams.set('sha', chunk.sha256)
-      const response = await fetch(url)
-      if (!response.ok) throw new Error(`공개 기본 단어장 ${index + 1}번 조각을 불러오지 못했습니다.`)
-      const entries = await response.json() as LearningEntry[]
-      if (!Array.isArray(entries) || entries.length !== chunk.count) throw new Error(`공개 기본 단어장 ${index + 1}번 조각이 손상되었습니다.`)
+      const entries = await fetchPublicVocabularyChunk(url, chunk.count, index)
       chunkEntries[index] = entries
       completedChunks += 1
       downloadedBytes += chunk.bytes
