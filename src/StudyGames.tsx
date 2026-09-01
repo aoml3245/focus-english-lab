@@ -98,6 +98,11 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
   const startMastery = () => { setMemorizing(false); setMastery(createMasteryProgress(studyDeck)); setDeckPage(0); setQuestions([]); resetAnswer() }
   const repeatDeckStudy = () => { setMastery(null); setMemorizing(true); setDeckPage(0); setQuestions([]); resetAnswer() }
   const restartSetup = () => { setStudyDeck([]); setMemorizing(false); setMastery(null); setDeckPage(0); setMasteryStartedAt(''); setPersonalReview(false); setSelectionNote(''); setQuestions([]); setIndex(0); setCorrect(0); resetAnswer() }
+  const abandonCourse = () => {
+    if (!window.confirm('진행 중인 100단어 코스를 그만할까요?\n\n저장된 진행 상태가 삭제되고 단어 시험 설정으로 돌아갑니다.')) return
+    try { localStorage.removeItem(MASTERY_STORAGE_KEY) } catch { /* storage can be disabled */ }
+    restartSetup()
+  }
   const finishPersonalMastery = (progress: MasteryProgress) => {
     if (!personalReview) return
     const minimumCorrect = masteryMinimumAttempts(studyDeck.length)
@@ -139,7 +144,7 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
   return <div className="study-page">
     <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header>
     <main>
-      {mastery ? <MasteryCourse entries={studyDeck} progress={mastery} onProgress={setMastery} onAttempt={(word, isCorrect) => { if (personalReview) recordPersonalWordAttempt(word, isCorrect) }} onComplete={finishPersonalMastery} onStudyAgain={repeatDeckStudy} onNewCourse={startMemorizing} onExit={restartSetup} /> : memorizing ? <MemorizationDeck entries={studyDeck} page={deckPage} note={selectionNote} onPage={setDeckPage} onStartMastery={startMastery} /> : !questions.length ? <>
+      {mastery ? <MasteryCourse entries={studyDeck} progress={mastery} onProgress={setMastery} onAttempt={(word, isCorrect) => { if (personalReview) recordPersonalWordAttempt(word, isCorrect) }} onComplete={finishPersonalMastery} onStudyAgain={repeatDeckStudy} onNewCourse={startMemorizing} onExit={abandonCourse} /> : memorizing ? <MemorizationDeck entries={studyDeck} page={deckPage} note={selectionNote} onPage={setDeckPage} onStartMastery={startMastery} onExit={abandonCourse} /> : !questions.length ? <>
         <section className="study-hero"><span>VOCABULARY LAB</span><h1>외우는 대신,<br />꺼내 쓰는 연습.</h1><p>직접 검수를 마친 공개 단어장에서 뜻과 동의어를 확인하고, 문제 문맥 문장으로 해석과 영작을 연습합니다. 답은 언제든 바로 볼 수 있습니다.</p></section>
         <section className="study-mode-grid" aria-label="학습 게임 선택">
           <button className={game === 'vocabulary' ? 'study-mode study-mode--active' : 'study-mode'} onClick={() => setGame('vocabulary')}><span>01</span><strong>단어 시험</strong><p>뜻 입력 · 동의어 선택 · 철자 회상</p></button>
@@ -160,14 +165,14 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
   </div>
 }
 
-function MemorizationDeck({ entries, page, note, onPage, onStartMastery }: { entries: LearningEntry[]; page: number; note?: string; onPage: (page: number) => void; onStartMastery: () => void }) {
+function MemorizationDeck({ entries, page, note, onPage, onStartMastery, onExit }: { entries: LearningEntry[]; page: number; note?: string; onPage: (page: number) => void; onStartMastery: () => void; onExit: () => void }) {
   const total = Math.max(1, entries.length)
   const safePage = Math.min(page, total - 1)
   const entry = entries[safePage]
   if (!entry) return null
   const otherMeanings = (entry.meanings || []).slice(1)
   return <section className="memorization-deck">
-    <div className="memorization-head"><div><span>MASTERY PREP</span><h1>한 장씩, 100개.</h1><p>한 화면에서 단어 하나에 집중하세요. 뜻·동의어·예문을 확인한 뒤 다음 카드로 넘어갑니다.</p></div><strong>{safePage + 1} / {total}</strong></div>
+    <div className="memorization-head"><div><span>MASTERY PREP</span><h1>한 장씩, 100개.</h1><p>한 화면에서 단어 하나에 집중하세요. 뜻·동의어·예문을 확인한 뒤 다음 카드로 넘어갑니다.</p></div><div className="memorization-head-actions"><strong>{safePage + 1} / {total}</strong><button className="text-button" onClick={onExit}>그만하기</button></div></div>
     {note && <div className="mastery-notice" role="status">{note}</div>}
     <div className="memorization-progress"><i style={{ width: `${((safePage + 1) / total) * 100}%` }} /></div>
     <article className="memorization-flashcard" key={entry.word}>

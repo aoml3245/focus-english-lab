@@ -73,7 +73,7 @@ export default function MasteryCourse({ entries, progress, onProgress, onAttempt
   return <section className="mastery-course">
     <header className="mastery-course-head">
       <div><span>100-WORD MASTERY</span><h1>{stage.label}</h1><p>{stage.description} 틀린 단어는 현재 완주 안에서 0개가 될 때까지 다시 나옵니다.</p></div>
-      <button className="text-button" onClick={() => { if (window.confirm('현재 100단어 코스를 종료하고 설정으로 돌아갈까요?')) onExit() }}>코스 종료</button>
+      <button className="text-button" onClick={onExit}>그만하기</button>
     </header>
     <div className="mastery-roadmap" aria-label="마스터리 단계">
       {MASTERY_STAGES.map((candidate, index) => <div key={candidate.task} className={index < progress.stageIndex ? 'mastery-step mastery-step--done' : index === progress.stageIndex ? 'mastery-step mastery-step--active' : 'mastery-step'}><span>{index < progress.stageIndex ? '✓' : index + 1}</span><strong>{candidate.label}</strong><small>{candidate.repetitions}완주</small></div>)}

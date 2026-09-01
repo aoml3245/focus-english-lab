@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowIcon, Brand } from './components'
 import { loadFavorites, loadPersonalWords, normalizeWord, requestVocabulary, saveFavorites, type LearningEntry } from './learning'
 import PersonalVocabularyWorkspace from './PersonalVocabularyWorkspace'
@@ -8,7 +8,6 @@ import type { VocabularyDownloadProgress } from './cloudSync'
 
 type IndexedEntry = LearningEntry & { searchText: string }
 type VocabularyAudioState = { key: string; phase: 'preparing' | 'ready' | 'playing' | 'done' | 'error'; status: string }
-const PAGE_SIZE = 48
 const LEVELS = ['All', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 const LEVEL_WEIGHT: Record<string, number> = { A1: 1, A2: 2, B1: 3, B2: 4, C1: 5, C2: 6 }
 
@@ -24,12 +23,13 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
   const [savedOnly, setSavedOnly] = useState(false)
   const [academicOnly, setAcademicOnly] = useState(false)
   const [sort, setSort] = useState<'academic' | 'frequency' | 'alphabetical'>('academic')
-  const [page, setPage] = useState(0)
+  const [cardIndex, setCardIndex] = useState(0)
   const [favorites, setFavorites] = useState(loadFavorites)
   const [libraryVersion, setLibraryVersion] = useState(0)
   const [audio, setAudio] = useState<VocabularyAudioState | null>(null)
   const audioRequest = useRef(0)
   const audioPreparation = useRef<AbortController | null>(null)
+  const swipeStartX = useRef<number | null>(null)
   useEffect(() => {
     let active = true
     requestVocabulary((progress) => { if (active) setDownloadProgress(progress) }).then((entries) => {
@@ -74,17 +74,37 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
       return b.frequency - a.frequency || (a.frequencyRank ?? Number.MAX_SAFE_INTEGER) - (b.frequencyRank ?? Number.MAX_SAFE_INTEGER) || a.word.localeCompare(b.word)
     })
   }, [academicOnly, deferredQuery, favorites, level, savedOnly, sort, topic, vocabulary])
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const safePage = Math.min(page, pages - 1)
-  const visible = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
-  const stopVocabularyAudio = () => {
+  const safeCardIndex = Math.min(cardIndex, Math.max(0, filtered.length - 1))
+  const activeEntry = filtered[safeCardIndex]
+  const stopVocabularyAudio = useCallback(() => {
     audioRequest.current += 1
     audioPreparation.current?.abort()
     audioPreparation.current = null
     stopTTS()
     setAudio(null)
+  }, [])
+  const changeFilter = (change: () => void) => { stopVocabularyAudio(); change(); setCardIndex(0) }
+  const moveCard = useCallback((direction: -1 | 1) => {
+    stopVocabularyAudio()
+    setCardIndex((current) => Math.max(0, Math.min(filtered.length - 1, current + direction)))
+  }, [filtered.length, stopVocabularyAudio])
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.matches('input, textarea, select, [contenteditable="true"]')) return
+      if (event.key === 'ArrowLeft' && safeCardIndex > 0) { event.preventDefault(); moveCard(-1) }
+      if (event.key === 'ArrowRight' && safeCardIndex + 1 < filtered.length) { event.preventDefault(); moveCard(1) }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [filtered.length, moveCard, safeCardIndex])
+  const finishSwipe = (clientX: number) => {
+    const start = swipeStartX.current
+    swipeStartX.current = null
+    if (start === null || Math.abs(clientX - start) < 60) return
+    if (clientX < start && safeCardIndex + 1 < filtered.length) moveCard(1)
+    if (clientX > start && safeCardIndex > 0) moveCard(-1)
   }
-  const changeFilter = (change: () => void) => { stopVocabularyAudio(); change(); setPage(0) }
   const playVocabularyAudio = async (key: string, text: string) => {
     if (audio?.key === key && audio.phase === 'playing') { stopVocabularyAudio(); return }
     const request = ++audioRequest.current
@@ -138,7 +158,6 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
     <main>
       <div className="vocab-hero"><div><h1>문장으로 익히는 단어장</h1><p>문제은행의 문맥 어휘와 공개 사전에서 직접 검수를 마친 어휘를 1,000개 단위로 공개합니다. 단어와 예문은 음성 설정에서 고른 목소리로 들을 수 있습니다.</p></div><dl><div><dt>전체 어휘</dt><dd>{vocabulary.length ? vocabulary.length.toLocaleString('en-US') : '—'}</dd></div><div><dt>학술 핵심</dt><dd>{vocabulary.length ? academicCount.toLocaleString('en-US') : '—'}</dd></div><div><dt>저장한 단어</dt><dd>{favorites.size.toLocaleString('en-US')}</dd></div></dl></div>
       {vocabulary.length > 0 && downloadProgress?.phase === 'done' && <VocabularyCacheSummary progress={downloadProgress} />}
-      <PersonalVocabularyWorkspace vocabulary={dictionaryVocabulary} onLibraryChanged={() => setLibraryVersion((value) => value + 1)} />
       <section className="vocab-controls" aria-label="단어장 검색과 필터">
         <label className="vocab-search"><span>단어 검색</span><input type="search" value={query} onChange={(event) => changeFilter(() => setQuery(event.target.value))} placeholder="영어 단어, 한국어 뜻, 동의어 검색" /></label>
         <label><span>난이도</span><select value={level} onChange={(event) => changeFilter(() => setLevel(event.target.value))}>{LEVELS.map((value) => <option key={value} value={value}>{value === 'All' ? '전체' : value}</option>)}</select></label>
@@ -147,9 +166,17 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
         <button className={academicOnly ? 'filter-toggle filter-toggle--active' : 'filter-toggle'} onClick={() => changeFilter(() => setAcademicOnly((value) => !value))}>{academicOnly ? '학술 핵심만 보는 중' : '학술 핵심만'}</button>
         <button className={savedOnly ? 'filter-toggle filter-toggle--active' : 'filter-toggle'} onClick={() => changeFilter(() => setSavedOnly((value) => !value))}>{savedOnly ? '내가 만든 단어장 보는 중' : '내가 만든 단어장'}</button>
       </section>
-      <div className="vocab-result-head"><p><strong>{filtered.length.toLocaleString('en-US')}</strong>개 단어</p><span>{safePage + 1} / {pages} 페이지</span></div>
-      {loadError ? <div className="vocab-empty"><strong>{loadError}</strong><span>페이지를 새로고침해 다시 시도해 주세요.</span></div> : !vocabulary.length ? <VocabularyLoading progress={downloadProgress} /> : visible.length ? <section className="vocab-list" aria-label="단어 목록">{visible.map((entry) => <VocabularyCard key={entry.word} entry={entry} saved={favorites.has(entry.word)} personal={personalWords.has(normalizeWord(entry.word))} audio={audio} onPlay={playVocabularyAudio} onToggle={() => toggleFavorite(entry.word)} onDelete={() => deletePersonalWord(entry.word)} />)}</section> : <div className="vocab-empty"><strong>조건에 맞는 단어가 없습니다.</strong><span>검색어나 필터를 바꿔 보세요.</span></div>}
-      {pages > 1 && <nav className="vocab-pagination" aria-label="단어장 페이지"><button disabled={safePage === 0} onClick={() => { stopVocabularyAudio(); setPage(Math.max(0, safePage - 1)) }}><ArrowIcon direction="left" /> 이전</button><span>{safePage + 1} / {pages}</span><button disabled={safePage === pages - 1} onClick={() => { stopVocabularyAudio(); setPage(Math.min(pages - 1, safePage + 1)) }}>다음 <ArrowIcon /></button></nav>}
+      <div className="vocab-result-head"><p><strong>{filtered.length.toLocaleString('en-US')}</strong>개 단어</p>{activeEntry && <span><b>{safeCardIndex + 1}</b> / {filtered.length.toLocaleString('en-US')}</span>}</div>
+      {loadError ? <div className="vocab-empty"><strong>{loadError}</strong><span>페이지를 새로고침해 다시 시도해 주세요.</span></div> : !vocabulary.length ? <VocabularyLoading progress={downloadProgress} /> : activeEntry ? <section className="vocab-deck" aria-label="한 장씩 보는 단어장">
+        <button className="vocab-deck-nav vocab-deck-nav--previous" aria-label="이전 단어" disabled={safeCardIndex === 0} onClick={() => moveCard(-1)}><ArrowIcon direction="left" /><span>이전 단어</span></button>
+        <div className="vocab-deck-stage" onPointerDown={(event) => { swipeStartX.current = event.clientX }} onPointerUp={(event) => finishSwipe(event.clientX)} onPointerCancel={() => { swipeStartX.current = null }}>
+          <VocabularyCard key={activeEntry.word} entry={activeEntry} saved={favorites.has(activeEntry.word)} personal={personalWords.has(normalizeWord(activeEntry.word))} audio={audio} onPlay={playVocabularyAudio} onToggle={() => toggleFavorite(activeEntry.word)} onDelete={() => deletePersonalWord(activeEntry.word)} />
+        </div>
+        <button className="vocab-deck-nav vocab-deck-nav--next" aria-label="다음 단어" disabled={safeCardIndex + 1 >= filtered.length} onClick={() => moveCard(1)}><span>다음 단어</span><ArrowIcon /></button>
+        <div className="vocab-deck-progress" aria-hidden="true"><span style={{ width: `${((safeCardIndex + 1) / filtered.length) * 100}%` }} /></div>
+        <p className="vocab-deck-hint">좌우로 스와이프하거나 화살표 키로 넘기세요. 카드 안에서는 위아래로 스크롤할 수 있습니다.</p>
+      </section> : <div className="vocab-empty"><strong>조건에 맞는 단어가 없습니다.</strong><span>검색어나 필터를 바꿔 보세요.</span></div>}
+      <PersonalVocabularyWorkspace vocabulary={dictionaryVocabulary} onLibraryChanged={() => setLibraryVersion((value) => value + 1)} />
       <p className="vocab-attribution">학술 핵심 기준: 앱 문항 빈도 또는 B2–C2 난이도와 공개 사전 빈도<br />어휘 정보: <a href="https://github.com/jhseo1211/open-english-korean-dict" target="_blank" rel="noreferrer">Open English–Korean Dictionary</a> · <a href="https://en-word.net/downloads" target="_blank" rel="noreferrer">Open English WordNet 2025</a></p>
     </main>
   </div>
