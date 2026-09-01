@@ -67,7 +67,7 @@ export default function ExamData({ onBack, onActivate }: { onBack: () => void; o
     <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header>
     <main>
       <div className="data-hero"><span>PORTABLE EXAM DATA</span><div className="data-hero-head"><h1>시험 데이터만 들고 어디서든 연습하세요.</h1><button className="format-help-button" type="button" aria-label="시험 데이터 파일 형식 도움말" title="파일 형식 보기" onClick={() => setHelpOpen(true)}>?</button></div><p>휴대폰이나 다른 컴퓨터에서 같은 웹페이지를 열고 <code>.felpack.json</code> 파일을 선택하면 바로 사용할 수 있습니다.</p></div>
-      <section className="data-current"><div><span>현재 문제은행</span><h2>{info.title}</h2><p>{info.itemCount.toLocaleString('ko-KR')}문항 · {info.source === 'imported' ? '가져온 파일' : '웹앱 기본 내장'}</p></div><strong>{info.source === 'imported' ? '가져옴' : '기본'}</strong></section>
+      <section className="data-current"><div><span>현재 문제은행</span><h2>{info.title}</h2><p>{info.itemCount.toLocaleString('ko-KR')}문항 · {info.source === 'imported' ? '가져온 파일' : '앱 기본 문제은행'}</p></div><strong>{info.source === 'imported' ? '가져옴' : '기본'}</strong></section>
       <div className="data-actions-grid">
         <section><h2>파일 열기</h2><p>문항 ID와 정답 범위를 검사한 뒤 브라우저에 저장합니다.</p><input ref={inputRef} className="visually-hidden" type="file" accept=".json,.felpack.json,application/json" onChange={(event) => void importFile(event.target.files?.[0])} /><button className="button button--primary" onClick={() => inputRef.current?.click()}>시험 데이터 파일 선택</button></section>
         <section><h2>현재 데이터 보관</h2><p>현재 사용 중인 문제은행을 다른 기기로 옮길 수 있습니다.</p><button className="button button--secondary" onClick={() => downloadExamPack(createExamPack(getActivePracticeItems(), info.title))}>현재 문제은행 내려받기</button></section>
@@ -75,7 +75,7 @@ export default function ExamData({ onBack, onActivate }: { onBack: () => void; o
         <section><h2>기본 데이터로 복원</h2><p>가져온 파일을 해제합니다. 학습 기록은 지워지지 않습니다.</p><button className="button button--secondary" disabled={info.source === 'built-in'} onClick={restore}>기본 문제은행 사용</button></section>
       </div>
       <p className="data-status" role="status" aria-live="polite">{status}</p>
-      <div className="data-note"><strong>기기 사이에 자동 동기화되지는 않습니다.</strong><p>시험 데이터 파일은 문제와 해설을 옮깁니다. 학습 기록·내 단어장 백업은 개인정보가 섞일 수 있어 별도 파일 기능으로 분리할 예정입니다.</p></div>
+      <div className="data-note"><strong>기기 간에 자동으로 동기화되지는 않습니다.</strong><p>시험 데이터 파일에는 문제와 해설만 들어갑니다. 학습 기록과 내 단어장은 포함되지 않으며, 내 단어장은 단어장 화면의 백업 기능으로 따로 옮길 수 있습니다.</p></div>
     </main>
     {helpOpen && <div className="modal-backdrop format-help-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHelpOpen(false) }}>
       <section className="format-help" role="dialog" aria-modal="true" aria-labelledby="format-help-title">

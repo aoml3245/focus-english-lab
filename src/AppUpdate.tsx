@@ -34,7 +34,7 @@ export async function refreshAppToLatest(onProgress?: (message: string) => void)
     const registration = await navigator.serviceWorker.getRegistration(import.meta.env.BASE_URL)
     await registration?.update().catch(() => undefined)
   }
-  onProgress?.(`버전 ${manifest.version}을(를) 적용하고 있습니다…`)
+  onProgress?.(`새 버전 ${manifest.version} 적용 중…`)
   applyLatestVersion(manifest.version)
   return manifest
 }
@@ -63,7 +63,7 @@ export default function AppUpdate() {
 
   if (!latest) return null
   return <aside className="app-update" role="status" aria-live="polite">
-    <span><strong>새 버전 {latest.version}</strong><small>배포가 완료됐습니다. 캐시를 우회해 바로 적용할 수 있습니다.</small></span>
+    <span><strong>새 버전 {latest.version}</strong><small>배포가 완료됐습니다. 이전 앱 파일을 건너뛰고 바로 적용할 수 있습니다.</small></span>
     <button onClick={() => { void refreshAppToLatest() }}>지금 적용</button>
   </aside>
 }

@@ -166,7 +166,7 @@ export default function Vocabulary({ onBack }: { onBack: () => void }) {
         <label><span>주제</span><select value={topic} onChange={(event) => changeFilter(() => setTopic(event.target.value))}><option value="All">전체 주제</option>{topics.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <label><span>정렬</span><select value={sort} onChange={(event) => changeFilter(() => setSort(event.target.value as typeof sort))}><option value="academic">TOEFL 학술 우선순</option><option value="frequency">문항 빈도순</option><option value="alphabetical">알파벳순</option></select></label>
         <button className={academicOnly ? 'filter-toggle filter-toggle--active' : 'filter-toggle'} onClick={() => changeFilter(() => setAcademicOnly((value) => !value))}>{academicOnly ? '학술 핵심만 보는 중' : '학술 핵심만'}</button>
-        <button className={savedOnly ? 'filter-toggle filter-toggle--active' : 'filter-toggle'} onClick={() => changeFilter(() => setSavedOnly((value) => !value))}>{savedOnly ? '내가 만든 단어장 보는 중' : '내가 만든 단어장'}</button>
+        <button className={savedOnly ? 'filter-toggle filter-toggle--active' : 'filter-toggle'} onClick={() => changeFilter(() => setSavedOnly((value) => !value))}>{savedOnly ? '내 단어장만 보는 중' : '내 단어장'}</button>
       </section>
       <div className="vocab-result-head"><p><strong>{filtered.length.toLocaleString('en-US')}</strong>개 단어</p>{activeEntry && <span><b>{safeCardIndex + 1}</b> / {filtered.length.toLocaleString('en-US')}</span>}</div>
       {loadError ? <div className="vocab-empty"><strong>{loadError}</strong><span>페이지를 새로고침해 다시 시도해 주세요.</span></div> : !vocabulary.length ? <VocabularyLoading progress={downloadProgress} /> : activeEntry ? <section className="vocab-deck" aria-label="한 장씩 보는 단어장">
@@ -193,12 +193,12 @@ function formatDownloadBytes(bytes: number) {
 function VocabularyLoading({ progress }: { progress: VocabularyDownloadProgress | null }) {
   const percent = progress?.totalChunks ? Math.round(progress.completedChunks / progress.totalChunks * 100) : 0
   const amount = progress ? `${formatDownloadBytes(progress.downloadedBytes)} 새로 받음${progress.totalBytes ? ` · 전체 ${formatDownloadBytes(progress.totalBytes)}` : ''}` : '0 B 새로 받음'
-  const title = progress?.phase === 'manifest' ? '단어장 다운로드 목록을 확인하고 있습니다.' : progress?.phase === 'processing' ? '받은 단어를 검색 가능한 목록으로 정리하고 있습니다.' : '비공개 단어장을 받고 있습니다.'
-  return <div className="vocab-download" role="status" aria-live="polite"><strong>{title}</strong><div className="vocab-download__meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div><div><span>{progress?.completedChunks || 0} / {progress?.totalChunks || '—'}개 조각</span><span>{amount}</span></div><small>{(progress?.loadedEntries || 0).toLocaleString('ko-KR')}개 단어 불러옴 · 캐시 {progress?.cachedChunks || 0}개 재사용</small></div>
+  const title = progress?.phase === 'manifest' ? '단어장 다운로드 목록을 확인하고 있습니다.' : progress?.phase === 'processing' ? '받은 단어를 검색 가능한 목록으로 정리하고 있습니다.' : '기본 단어장을 받고 있습니다.'
+  return <div className="vocab-download" role="status" aria-live="polite"><strong>{title}</strong><div className="vocab-download__meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div><div><span>{progress?.completedChunks || 0} / {progress?.totalChunks || '—'}개 조각</span><span>{amount}</span></div><small>{(progress?.loadedEntries || 0).toLocaleString('ko-KR')}개 단어 불러오는 중 · 캐시 {progress?.cachedChunks || 0}개 재사용</small></div>
 }
 
 function VocabularyCacheSummary({ progress }: { progress: VocabularyDownloadProgress }) {
-  return <div className="vocab-cache-summary" role="status"><strong>단어장 준비 완료</strong><span>캐시 {progress.cachedChunks}개 재사용 · Firebase에서 {formatDownloadBytes(progress.downloadedBytes)} 새로 받음 · 전체 {progress.totalChunks}개 조각</span></div>
+  return <div className="vocab-cache-summary" role="status"><strong>단어장 준비 완료</strong><span>전체 {progress.totalChunks}개 조각 · {formatDownloadBytes(progress.downloadedBytes)} 새로 받음 · 캐시 {progress.cachedChunks}개 재사용</span></div>
 }
 
 function SpeakerIcon({ stopped = false }: { stopped?: boolean }) {

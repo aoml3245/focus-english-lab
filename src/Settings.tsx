@@ -106,7 +106,7 @@ export default function Settings({ onBack, onVoiceSettings, onExamData }: { onBa
       <div className="settings-hero"><span>SETTINGS</span><h1>학습 환경 설정</h1><p>화면 테마, 음성, 로컬 AI, 브라우저 저장공간처럼 기기마다 달라지는 설정을 여기에서 관리합니다.</p></div>
 
       <section className="settings-section">
-        <div className="settings-section-head"><div><span>01</span><h2>화면 테마</h2><p>기기의 화면 모드를 따르거나 라이트·다크 테마를 직접 고정할 수 있습니다.</p></div></div>
+        <div className="settings-section-head"><div><span>01</span><h2>화면 테마</h2><p>기기의 테마 설정을 따르거나 라이트·다크 테마를 직접 고정할 수 있습니다.</p></div></div>
         <div className="theme-options" role="group" aria-label="화면 테마 선택">
           {([
             ['system', '시스템 설정', '기기의 라이트·다크 모드를 자동으로 따릅니다.'],
@@ -151,12 +151,12 @@ export default function Settings({ onBack, onVoiceSettings, onExamData }: { onBa
       </section>
 
       <section className="settings-section">
-        <div className="settings-section-head"><div><span>08</span><h2>앱 업데이트</h2><p>현재 배포된 최신 버전을 다시 확인하고, 이전 앱 파일 캐시를 우회해 새 버전으로 재시작합니다.</p></div><button className="button button--primary" onClick={() => { void forceUpdate() }} disabled={updateBusy}>{updateBusy ? '최신 버전 확인 중…' : '최신 버전 강제 적용'}</button></div>
+        <div className="settings-section-head"><div><span>08</span><h2>앱 업데이트</h2><p>새 앱 파일을 다시 받아 최신 버전으로 재시작합니다.</p></div><button className="button button--primary" onClick={() => { void forceUpdate() }} disabled={updateBusy}>{updateBusy ? '최신 버전 확인 중…' : '최신 버전 다시 적용'}</button></div>
         <dl className="settings-summary"><div><dt>현재 실행 버전</dt><dd>{APP_VERSION}</dd></div><div><dt>보존되는 데이터</dt><dd>학습 기록 · 단어장 · 음성 모델</dd></div></dl>
         <p className="settings-status" role="status" aria-live="polite">{updateMessage}</p>
       </section>
 
-      <footer className="settings-footer"><Brand /><p>개발 중인 0.x 버전입니다. 기능 변경마다 버전을 올려 배포 상태를 구분합니다.</p><strong>Version {APP_VERSION}</strong></footer>
+      <footer className="settings-footer"><Brand /><p>ChatGPT Codex를 활용해 앱을 개발하고 학습 데이터를 제작·정리했습니다. 개발 중인 0.x 버전이며, 기능 변경마다 버전을 올려 배포 상태를 구분합니다.</p><strong>Version {APP_VERSION}</strong></footer>
     </main>
   </div>
 }

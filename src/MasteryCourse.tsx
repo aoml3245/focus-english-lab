@@ -72,21 +72,21 @@ export default function MasteryCourse({ entries, progress, onProgress, onAttempt
 
   return <section className="mastery-course">
     <header className="mastery-course-head">
-      <div><span>100-WORD MASTERY</span><h1>{stage.label}</h1><p>{stage.description} 틀린 단어는 현재 완주 안에서 0개가 될 때까지 다시 나옵니다.</p></div>
+      <div><span>100-WORD MASTERY</span><h1>{stage.label}</h1><p>{stage.description} 틀린 단어는 현재 단계에서 0개가 될 때까지 다시 나옵니다.</p></div>
       <button className="text-button" onClick={onExit}>그만하기</button>
     </header>
     <div className="mastery-roadmap" aria-label="마스터리 단계">
-      {MASTERY_STAGES.map((candidate, index) => <div key={candidate.task} className={index < progress.stageIndex ? 'mastery-step mastery-step--done' : index === progress.stageIndex ? 'mastery-step mastery-step--active' : 'mastery-step'}><span>{index < progress.stageIndex ? '✓' : index + 1}</span><strong>{candidate.label}</strong><small>{candidate.repetitions}완주</small></div>)}
+      {MASTERY_STAGES.map((candidate, index) => <div key={candidate.task} className={index < progress.stageIndex ? 'mastery-step mastery-step--done' : index === progress.stageIndex ? 'mastery-step mastery-step--active' : 'mastery-step'}><span>{index < progress.stageIndex ? '✓' : index + 1}</span><strong>{candidate.label}</strong><small>{candidate.repetitions}회 반복</small></div>)}
     </div>
     <div className="mastery-stats">
-      <div><span>현재 완주</span><strong>{progress.cycle} / {stage.repetitions}</strong></div>
+      <div><span>현재 반복</span><strong>{progress.cycle} / {stage.repetitions}</strong></div>
       <div><span>현재 묶음 남음</span><strong>{remaining}</strong></div>
       <div><span>재학습 대기</span><strong>{progress.retryWords.length}</strong></div>
       <div><span>누적 회상</span><strong>{progress.totalAttempts.toLocaleString('en-US')}</strong></div>
     </div>
     {notice && <div className="mastery-notice" role="status">{notice}</div>}
     <article className="mastery-card">
-      <div className="mastery-card-meta"><span>{stage.label} · {progress.cycle}/{stage.repetitions}완주 · 재도전 {progress.retryRound}차</span><strong>{progress.position + 1} / {progress.queue.length}</strong></div>
+      <div className="mastery-card-meta"><span>{stage.label} · 반복 {progress.cycle}/{stage.repetitions} · 재도전 {progress.retryRound}차</span><strong>{progress.position + 1} / {progress.queue.length}</strong></div>
       <p>{copy.instruction}</p>
       <h2 className={stage.task.startsWith('cloze') ? 'mastery-prompt mastery-prompt--sentence' : 'mastery-prompt'}>{copy.prompt}</h2>
       {choice ? <div className="mastery-options">{choice.options.map((option) => <button key={option} disabled={revealed} className={revealed ? option === choice.answer ? 'mastery-option mastery-option--correct' : option === response ? 'mastery-option mastery-option--wrong' : 'mastery-option' : 'mastery-option'} onClick={() => reveal(option)}>{option}</button>)}</div> : <input key={`${stage.task}-${entry.word}-${progress.cycle}-${progress.retryRound}`} autoFocus className="mastery-input" value={response} disabled={revealed} onChange={(event) => setResponse(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') reveal() }} placeholder={copy.placeholder} />}
@@ -95,6 +95,6 @@ export default function MasteryCourse({ entries, progress, onProgress, onAttempt
         <div className="mastery-judgment"><div><span>직접 판정</span><strong>{response ? exactMatch ? '정확히 일치합니다.' : '뜻이나 철자가 충분히 맞는지 직접 결정하세요.' : '머릿속으로 떠올린 답을 기준으로 판단하세요.'}</strong></div><button onClick={() => judge(false)}>↺ 다시 볼게요</button><button className="mastery-correct" onClick={() => judge(true)}>✓ 맞았어요</button></div>
       </>}
     </article>
-    <p className="mastery-save-note">진행 상태는 이 브라우저에 자동 저장됩니다. 홈으로 갔다 돌아와도 이어서 시작합니다.</p>
+    <p className="mastery-save-note">진행 상태는 이 브라우저에 자동 저장됩니다. 홈으로 갔다 돌아와도 이어서 할 수 있습니다.</p>
   </section>
 }

@@ -117,7 +117,7 @@ export default function ReadingAssistant({ passage, topic }: { passage: string; 
     const savedEntry = savePersonalWord({ ...entry, topics: [...new Set([topic, ...entry.topics])] })
     setEntry(savedEntry)
     setSaved(true)
-    setNotice('“내가 만든 단어장”에 저장했습니다.')
+    setNotice('내 단어장에 저장했습니다.')
   }
 
   const removeCurrent = () => {

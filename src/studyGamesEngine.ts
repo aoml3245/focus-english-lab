@@ -98,7 +98,7 @@ export function advanceMasteryProgress(
   if (progress.cycle < stage.repetitions) {
     return {
       progress: { ...progress, cycle: progress.cycle + 1, queue: shuffle(unique(allWords), random), position: 0, retryWords: [], retryRound: 1, totalAttempts: attempts },
-      transition: `${stage.label} ${progress.cycle + 1}/${stage.repetitions} 완주를 시작합니다.`,
+      transition: `${stage.label} ${progress.cycle + 1}/${stage.repetitions}회 반복을 시작합니다.`,
     }
   }
   if (progress.stageIndex + 1 < MASTERY_STAGES.length) {

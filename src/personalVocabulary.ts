@@ -175,7 +175,7 @@ export function attachPersonalMeaning(entry: LearningEntry, meaningKo: string): 
     meaningKo,
     personalMeaningKo: meaningKo,
     dictionaryMeaningKo: entry.dictionaryMeaningKo || entry.meaningKo,
-    topics: [...new Set(['내가 만든 단어장', ...(entry.topics || [])])],
+    topics: [...new Set(['내 단어장', ...(entry.topics || [])])],
   }
 }
 

@@ -235,7 +235,7 @@ export async function analyzeWordWithLocalLlm(word: string, sentence: string, fa
       example: sentence,
       translation: sentenceTranslation,
       frequency: fallback?.frequency || 1,
-      topics: fallback?.topics || ['내가 만든 단어장'],
+      topics: fallback?.topics || ['내 단어장'],
       source: 'local-llm',
       context: sentence,
     }
@@ -255,7 +255,7 @@ export async function analyzeWordWithLocalLlm(word: string, sentence: string, fa
     example: sentence,
     translation: result.sentenceTranslation || fallback?.translation || '',
     frequency: fallback?.frequency || 1,
-    topics: fallback?.topics || ['내가 만든 단어장'],
+    topics: fallback?.topics || ['내 단어장'],
     source: 'local-llm',
     context: sentence,
   }

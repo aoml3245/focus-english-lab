@@ -13,7 +13,7 @@ const entry = (word: string): LearningEntry => ({
   example: `The ${word} matters.`,
   translation: `${word}는 중요하다.`,
   frequency: 0,
-  topics: ['내가 만든 단어장'],
+  topics: ['내 단어장'],
 })
 
 describe('personal vocabulary workflow', () => {
@@ -47,7 +47,7 @@ describe('personal vocabulary workflow', () => {
     expect(linked.meaningKo).toBe('내가 정한 포기하다')
     expect(linked.personalMeaningKo).toBe('내가 정한 포기하다')
     expect(linked.dictionaryMeaningKo).toBe('abandon 뜻')
-    expect(linked.topics[0]).toBe('내가 만든 단어장')
+    expect(linked.topics[0]).toBe('내 단어장')
   })
 
   it('requires both directions and repeats only missed tasks until all are correct', () => {

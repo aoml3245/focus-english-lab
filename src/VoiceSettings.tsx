@@ -151,7 +151,7 @@ export default function VoiceSettings({ onBack }: { onBack: () => void }) {
         <div className="voice-download-detail"><span>{modelProgress ? status : cacheState === 'available' ? '모델 파일은 브라우저의 transformers-cache에 보관되어 다음 방문에도 재사용됩니다.' : 'AI 음성의 미리 듣기를 누르면 실제 다운로드 퍼센트와 전송량이 여기에 표시됩니다.'}</span>{modelProgress?.loadedBytes !== undefined && modelProgress.totalBytes !== undefined && <strong>{(modelProgress.loadedBytes / 1024 / 1024).toFixed(1)} / {(modelProgress.totalBytes / 1024 / 1024).toFixed(1)} MB{modelProgress.file ? ` · ${modelProgress.file}` : ''}</strong>}</div>
       </section>}
       {!localTts && <details className="tts-diagnostics" open>
-        <summary><span>임시 TTS 진단 도구</span><strong>{diagnostics.length ? `${diagnostics.length}개 이벤트` : '대기 중'}</strong></summary>
+        <summary><span>TTS 진단 로그</span><strong>{diagnostics.length ? `${diagnostics.length}개 이벤트` : '대기 중'}</strong></summary>
         <div className="tts-diagnostics__body">
           <dl>
             <div><dt>앱</dt><dd>v{APP_VERSION}</dd></div>
