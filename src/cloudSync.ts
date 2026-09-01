@@ -1,6 +1,7 @@
 import { getApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app'
 import { GoogleAuthProvider, getAuth, getRedirectResult, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut, type User } from 'firebase/auth'
-import { Timestamp, deleteDoc, doc, getDoc, getFirestore, runTransaction, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore'
+import { Timestamp, addDoc, collection, deleteDoc, doc, getDoc, getFirestore, runTransaction, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore'
+import type { ClientErrorLog } from './clientErrorLogging'
 import { clearAllPersonalVocabularyData, createPersonalVocabularyBackup, importPersonalVocabularyBackup, type PersonalVocabularyBackup } from './personalVocabulary'
 import { notifyPrivateDataApplied } from './privateDataEvents'
 import { clearAllSessionData, createSessionBackup, importSessionBackup, type SessionBackup } from './storage'
@@ -61,6 +62,27 @@ export function watchCloudUser(callback: (user: User | null) => void, onError?: 
   const auth = services().auth
   void getRedirectResult(auth).catch((error) => onError?.(error instanceof Error ? error : new Error('로그인 결과를 확인하지 못했습니다.')))
   return onAuthStateChanged(auth, callback, (error) => onError?.(error))
+}
+
+export function watchCloudUserForLogging(callback: (user: User | null) => void) {
+  if (!CLOUD_SYNC_CONFIGURED) {
+    callback(null)
+    return () => undefined
+  }
+  return onAuthStateChanged(services().auth, callback)
+}
+
+export async function uploadClientErrorLog(payload: ClientErrorLog) {
+  if (!CLOUD_SYNC_CONFIGURED) return false
+  const { auth, db } = services()
+  const user = auth.currentUser
+  if (!user) return false
+  await addDoc(collection(db, 'groups', CLOUD_GROUP_ID, 'errorLogs'), {
+    ...payload,
+    userId: user.uid,
+    createdAt: serverTimestamp(),
+  })
+  return true
 }
 
 export async function signInToCloud() {

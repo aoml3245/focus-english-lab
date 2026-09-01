@@ -55,6 +55,14 @@ service cloud.firestore {
         allow read: if groupId == privateGroupId() && isMember(groupId);
         allow create, update, delete: if groupId == privateGroupId() && isOwner(groupId);
       }
+
+      match /errorLogs/{logId} {
+        allow create: if groupId == privateGroupId()
+          && isMember(groupId)
+          && request.resource.data.userId == request.auth.uid;
+        allow read, delete: if groupId == privateGroupId() && isOwner(groupId);
+        allow update: if false;
+      }
     }
 
     match /invites/{inviteId} {
