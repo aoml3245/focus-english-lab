@@ -211,11 +211,14 @@ describe('directly authored TOEFL-style bank', () => {
       const group = item.stimulusGroupId || item.id
       if (!representatives.has(group)) representatives.set(group, { id: item.id, text })
     }
-    const stimuli = [...representatives.values()]
+    const stimuli = [...representatives.values()].map((stimulus) => ({
+      ...stimulus,
+      grams: fourGrams(stimulus.text),
+    }))
     const suspicious: string[] = []
     for (let left = 0; left < stimuli.length; left += 1) {
       for (let right = left + 1; right < stimuli.length; right += 1) {
-        if (jaccard(fourGrams(stimuli[left].text), fourGrams(stimuli[right].text)) >= 0.45) suspicious.push(`${stimuli[left].id}:${stimuli[right].id}`)
+        if (jaccard(stimuli[left].grams, stimuli[right].grams) >= 0.45) suspicious.push(`${stimuli[left].id}:${stimuli[right].id}`)
       }
     }
     expect(suspicious).toEqual([])
