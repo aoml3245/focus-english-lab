@@ -8,9 +8,24 @@ The generated public vocabulary checkpoints and private build artifact incorpora
 - License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
 - Snapshot: commit `92cbfe63deee1ccead2c42677027d8b4a305b2c7`
 - Used fields: Korean headword meanings, English glosses, IPA, CEFR metadata, and frequency ranks.
-- Changes: Valid problem-corpus entries are retained; additional B1–C2 entries are selected by frequency, filtered, matched to WordNet senses, and combined with generated definition-oriented study sentences.
+- Changes: Valid problem-corpus entries are retained; additional B1–C2 entries are selected by frequency, filtered, matched to WordNet senses, and combined with independently phrased learner sentences. The final corpus has 29,976 entries whose provided meanings, definitions, strict synonyms, examples and translations were directly AI-reviewed; local-model drafts were not accepted as authoritative.
 
 The derived lexical dataset is distributed under CC BY-SA 4.0. This notice does not change the license or ownership of the application's independently written question corpus or source code.
+
+### Retained upstream credits
+
+The pinned dictionary's [CREDITS.md](https://github.com/jhseo1211/open-english-korean-dict/blob/92cbfe63deee1ccead2c42677027d8b4a305b2c7/CREDITS.md) credits the following sources. We preserve those credits because the retained IPA, CEFR, ranking and lexical fields may derive from them; this is not a claim that we independently imported every database.
+
+- [kengdic, garfieldnate](https://github.com/garfieldnate/kengdic), CC BY-SA 3.0.
+- [cc-kedict, mhagiwara](https://github.com/mhagiwara/cc-kedict), CC BY-SA 3.0.
+- [ipa-dict, Open Dict Data / dohliam](https://github.com/open-dict-data/ipa-dict), MIT; full notice in [licenses/IPA-DICT-LICENSE.txt](./licenses/IPA-DICT-LICENSE.txt).
+- [CMU Pronouncing Dictionary, Carnegie Mellon University](https://github.com/cmusphinx/cmudict), BSD-style; full notice in [licenses/CMUDICT-LICENSE.txt](./licenses/CMUDICT-LICENSE.txt).
+- [CEFR-J Wordlist / Open Language Profiles](https://github.com/openlanguageprofiles/olp-en-cefrj), CC BY-SA 4.0.
+- [New General Service List](http://www.newgeneralservicelist.org) and [New Academic Word List](http://www.newacademicwordlist.org), CC BY-SA as identified in the pinned credits.
+- [Wiktionary via Kaikki](https://kaikki.org), CC BY-SA 3.0 as identified in the pinned credits.
+- Hand-curated and LLM-assisted translations in the upstream dictionary: LexiSnap project team.
+
+The combined derived vocabulary is CC BY-SA 4.0; MIT/BSD notices remain preserved for their retained pronunciation fields. No source databases or model weights are redistributed.
 
 ## Open English WordNet 2025 / Princeton WordNet
 

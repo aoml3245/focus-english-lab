@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from direct_review_batches import digest, load_ledger, ordered
+from vocabulary_validation import ALLOWED_PARTS_OF_SPEECH, has_complete_study_example
 
 
 PUBLIC_FIELDS = (
@@ -83,6 +84,8 @@ def main() -> None:
         or any(entry.get(field) != entry["meanings"][0].get(field) for field in ("meaningKo", "meaningEn", "partOfSpeech", "synonyms"))
         or not entry.get("example")
         or not entry.get("translation")
+        or not has_complete_study_example(entry)
+        or any(sense.get("partOfSpeech") not in ALLOWED_PARTS_OF_SPEECH for sense in entry.get("meanings", []))
     ]
     if invalid:
         raise SystemExit("Checkpoint contains structurally invalid accepted entries: " + ", ".join(invalid[:20]))

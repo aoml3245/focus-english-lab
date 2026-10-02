@@ -22,4 +22,6 @@ The source databases are not checked into this repository. `private/vocabulary.j
 
 ## Original corpus fields
 
-Example sentences, Korean example translations, topic labels and frequency counts tied to this project's independently written question corpus remain subject to the licenses stated above when distributed as part of the combined private `vocabulary.json` dataset. The original question corpus in `src/` is not copied from official test questions and is distributed with the source code under the MIT License.
+Example sentences, Korean example translations, topic labels and frequency counts tied to this project's independently written question corpus remain subject to the licenses stated above when distributed as part of the combined public or private vocabulary dataset. The original question corpus in `src/` is not copied from official test questions and is distributed with the source code under the MIT License.
+
+The final 29,976-entry dataset was directly reviewed by AI agents, with a separate 300-entry stratified semantic audit and cross-review. Earlier local-model text drafts were edited rather than treated as authoritative. New learner definitions and examples are independently phrased; consulted specialist references are validation sources, not redistributed excerpts. Upstream IPA and CEFR metadata are retained: these are not a separately verified pronunciation dictionary or official exam vocabulary scale. See [VOCABULARY_REVIEW.md](./VOCABULARY_REVIEW.md) for the review scope and limitations.

@@ -129,12 +129,13 @@ export function maskMasterySentence(entry: LearningEntry) {
 
 export function buildMasteryOptions(entry: LearningEntry, pool: LearningEntry[], task: 'cloze-choice' | 'synonym-choice', random: () => number = Math.random) {
   const answer = task === 'cloze-choice' ? entry.word : entry.synonyms[0] || entry.meaningEn
+  const equivalents = new Set([entry.word, entry.meaningEn, ...entry.synonyms].map((value) => value.trim().toLowerCase()))
   const candidates = task === 'cloze-choice'
     ? pool.filter((candidate) => candidate.word !== entry.word && candidate.partOfSpeech === entry.partOfSpeech).map((candidate) => candidate.word)
-    : pool.flatMap((candidate) => candidate.synonyms.length ? candidate.synonyms : [candidate.meaningEn]).filter((candidate) => candidate !== answer)
+    : pool.filter((candidate) => candidate.word !== entry.word).flatMap((candidate) => candidate.synonyms.length ? candidate.synonyms : [candidate.meaningEn]).filter((candidate) => !equivalents.has(candidate.trim().toLowerCase()))
   const fallback = task === 'cloze-choice'
     ? pool.filter((candidate) => candidate.word !== entry.word).map((candidate) => candidate.word)
-    : pool.filter((candidate) => candidate.word !== entry.word).map((candidate) => candidate.meaningEn)
+    : pool.filter((candidate) => candidate.word !== entry.word).map((candidate) => candidate.meaningEn).filter((candidate) => !equivalents.has(candidate.trim().toLowerCase()))
   const distractors = shuffle(unique([...candidates, ...fallback].filter(Boolean)), random).slice(0, 3)
   return { answer, options: shuffle(unique([answer, ...distractors]), random) }
 }
@@ -156,8 +157,9 @@ export function selectStudyEntries(
 
 function synonymOptions(entry: LearningEntry, pool: LearningEntry[], random: () => number) {
   const answer = entry.synonyms[0]
+  const equivalents = new Set([entry.word, entry.meaningEn, ...entry.synonyms].map((word) => word.trim().toLowerCase()))
   const distractors = shuffle(
-    [...new Set(pool.flatMap((candidate) => candidate.synonyms).filter((word) => word !== answer && !entry.synonyms.includes(word)))],
+    [...new Set(pool.filter((candidate) => candidate.word !== entry.word).flatMap((candidate) => candidate.synonyms).filter((word) => !equivalents.has(word.trim().toLowerCase())))],
     random,
   ).slice(0, 3)
   return distractors.length === 3 ? shuffle([answer, ...distractors], random) : undefined
@@ -194,6 +196,7 @@ export function hasStudySentence(entry: LearningEntry) {
   return Boolean(
     (entry.source === 'corpus' || entry.sentenceReviewed) &&
     entry.example?.trim() && entry.translation?.trim() &&
+    !/\b[a-z]+_{2,}/i.test(entry.example) &&
     !/^In this vocabulary set\b/i.test(entry.example.trim()) &&
     !/^이 단어장에서/.test(entry.translation.trim()),
   )

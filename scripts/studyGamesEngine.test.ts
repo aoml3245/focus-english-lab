@@ -59,7 +59,8 @@ describe('study game question generation', () => {
     const unreviewed = entry('unreviewed', { source: 'dictionary' })
     const template = entry('template', { source: 'dictionary', sentenceReviewed: true, example: 'In this vocabulary set, template refers to something.' })
     const missing = entry('missing', { source: 'dictionary', sentenceReviewed: true, translation: '  ' })
-    const questions = buildStudyQuestions([entries[0], reviewed, unreviewed, template, missing], 'sentence', 10, { level: 'All', academicOnly: false }, () => 0.3)
+    const incomplete = entry('load', { example: 'A mod___ load can cause damage.' })
+    const questions = buildStudyQuestions([entries[0], reviewed, unreviewed, template, missing, incomplete], 'sentence', 10, { level: 'All', academicOnly: false }, () => 0.3)
     expect(questions).toHaveLength(2)
     expect(new Set(questions.map((question) => question.entry.word))).toEqual(new Set(['alpha', 'reviewed']))
     expect(questions.map((question) => question.task)).toEqual(['translation', 'composition'])
@@ -100,5 +101,28 @@ describe('study game question generation', () => {
     expect(cloze.options).toHaveLength(4)
     expect(synonym.options).toContain(entries[0].synonyms[0])
     expect(maskMasterySentence(entries[0])).toContain('_____')
+  })
+
+  it('actually hides the answer in a cloze sentence without leaking it in a suffix', () => {
+    expect(maskMasterySentence(entry('alpha'))).toBe('The _____ changed the result.')
+    expect(maskMasterySentence(entry('cat', { example: 'A cat sat beside the catalog.' }))).toBe('A _____ sat beside the catalog.')
+    expect(maskMasterySentence(entry('a.b', { example: 'The a.b label differs from axb.' }))).toBe('The _____ label differs from axb.')
+  })
+
+  it('does not mark another valid synonym as a wrong mastery option', () => {
+    const target = entry('quick', { meaningEn: 'fast', synonyms: ['fast', 'rapid', 'swift'] })
+    const pool = [target, entry('speedy', { synonyms: ['Rapid'] }), entry('slow', { synonyms: ['sluggish'] }), entry('cold', { synonyms: ['chilly'] }), entry('late', { synonyms: ['tardy'] })]
+    const question = buildMasteryOptions(target, pool, 'synonym-choice', () => 0.4)
+    expect(question.answer).toBe('fast')
+    expect(question.options).not.toContain('rapid')
+    expect(question.options).not.toContain('Rapid')
+    expect(question.options).not.toContain('swift')
+    expect(question.options).toHaveLength(4)
+    const ordinary = buildStudyQuestions(pool, 'vocabulary', 20, { level: 'All', academicOnly: false }, () => 0.4)
+      .find((candidate) => candidate.entry.word === 'quick' && candidate.task === 'synonym')
+    expect(ordinary).toBeDefined()
+    expect(ordinary!.options).not.toContain('Rapid')
+    expect(ordinary!.options).not.toContain('rapid')
+    expect(ordinary!.options).not.toContain('swift')
   })
 })

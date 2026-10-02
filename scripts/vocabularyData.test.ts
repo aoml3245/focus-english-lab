@@ -20,7 +20,7 @@ describePrivateVocabulary('29,976-entry private vocabulary artifact', () => {
       expect(entry.translation.trim()).not.toBe('')
       expect(entry.topics.length).toBeGreaterThan(0)
       expect(entry.synonyms.length).toBeLessThanOrEqual(3)
-      expect(['noun', 'verb', 'adjective', 'adverb']).toContain(entry.partOfSpeech)
+      expect(['noun', 'verb', 'adjective', 'adverb', 'preposition', 'conjunction', 'pronoun', 'determiner', 'interjection']).toContain(entry.partOfSpeech)
       expect(['A1', 'A2', 'B1', 'B2', 'C1', 'C2']).toContain(entry.cefr)
     }
   })
