@@ -26,7 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", type=Path, default=Path("private/vocabulary.json"))
     parser.add_argument("--ledger", type=Path, default=Path("work/vocabulary/direct-review-ledger.jsonl"))
     parser.add_argument("--output", type=Path, default=Path("public/data/vocabulary"))
-    parser.add_argument("--checkpoint", type=int, default=0, help="Published count; defaults to the last 1,000 boundary.")
+    parser.add_argument("--checkpoint", type=int, default=0, help="Published count; defaults to the last 1,000 boundary, or the whole corpus when fully reviewed.")
     parser.add_argument("--chunk-size", type=int, default=250)
     return parser.parse_args()
 
@@ -38,6 +38,17 @@ def public_entry(entry: dict[str, Any]) -> dict[str, Any]:
         for sense in entry.get("meanings", [])
     ]
     return result
+
+
+def select_checkpoint(requested: int, accepted_count: int, total_count: int) -> int:
+    """Permit a short final batch only when every source entry is accepted."""
+    fully_reviewed = accepted_count == total_count and total_count > 0
+    checkpoint = requested or (total_count if fully_reviewed else (accepted_count // 1000) * 1000)
+    if checkpoint <= 0 or (checkpoint % 1000 and not (fully_reviewed and checkpoint == total_count)):
+        raise ValueError("Checkpoint must be a positive multiple of 1,000, or the fully reviewed corpus total.")
+    if accepted_count < checkpoint:
+        raise ValueError(f"Only {accepted_count} entries are currently accepted; cannot export {checkpoint}.")
+    return checkpoint
 
 
 def write_atomic(path: Path, value: Any) -> bytes:
@@ -61,11 +72,10 @@ def main() -> None:
         entry for entry in ordered(vocabulary)
         if accepted.get(entry["word"]) == digest(entry)
     ]
-    checkpoint = args.checkpoint or (len(accepted_entries) // 1000) * 1000
-    if checkpoint <= 0 or checkpoint % 1000:
-        raise SystemExit("Checkpoint must be a positive multiple of 1,000.")
-    if len(accepted_entries) < checkpoint:
-        raise SystemExit(f"Only {len(accepted_entries)} entries are currently accepted; cannot export {checkpoint}.")
+    try:
+        checkpoint = select_checkpoint(args.checkpoint, len(accepted_entries), len(vocabulary))
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
     selected = accepted_entries[:checkpoint]
     invalid = [
         entry["word"] for entry in selected
@@ -96,6 +106,8 @@ def main() -> None:
         "schemaVersion": 1,
         "entryCount": len(selected),
         "reviewCheckpoint": checkpoint,
+        "corpusEntryCount": len(vocabulary),
+        "reviewComplete": len(accepted_entries) == len(vocabulary) and checkpoint == len(vocabulary),
         "chunkSize": args.chunk_size,
         "chunkCount": len(chunks),
         "totalBytes": total_bytes,

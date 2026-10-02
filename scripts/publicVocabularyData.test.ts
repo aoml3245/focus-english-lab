@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 type Chunk = { file: string; count: number; bytes: number; sha256: string }
-type Manifest = { schemaVersion: number; entryCount: number; reviewCheckpoint: number; chunkCount: number; totalBytes: number; license: string; chunks: Chunk[] }
+type Manifest = { schemaVersion: number; entryCount: number; reviewCheckpoint: number; corpusEntryCount?: number; reviewComplete?: boolean; chunkCount: number; totalBytes: number; license: string; chunks: Chunk[] }
 type Sense = { senseId: string; meaningKo: string; meaningEn: string; partOfSpeech: string; synonyms: string[] }
 type Entry = { word: string; meaningKo: string; meaningEn: string; partOfSpeech: string; meanings: Sense[]; example: string; translation: string; synonyms: string[] }
 
@@ -12,11 +12,16 @@ const root = resolve(process.cwd(), 'public/data/vocabulary')
 const manifest = JSON.parse(readFileSync(resolve(root, 'manifest.json'), 'utf8')) as Manifest
 
 describe('public vocabulary checkpoint', () => {
-  it('publishes a complete 1,000-entry checkpoint with verified chunk hashes', () => {
+  it('publishes a completed checkpoint or the fully reviewed corpus with verified chunk hashes', () => {
     expect(manifest.schemaVersion).toBe(1)
     expect(manifest.entryCount).toBe(manifest.reviewCheckpoint)
     expect(manifest.entryCount).toBeGreaterThanOrEqual(1000)
-    expect(manifest.entryCount % 1000).toBe(0)
+    if (manifest.entryCount % 1000 !== 0) {
+      expect(manifest.reviewComplete).toBe(true)
+      expect(manifest.corpusEntryCount).toBe(29_976)
+      expect(manifest.entryCount).toBe(manifest.corpusEntryCount)
+    }
+    if (manifest.reviewComplete) expect(manifest.entryCount).toBe(manifest.corpusEntryCount)
     expect(manifest.chunkCount).toBe(manifest.chunks.length)
     expect(manifest.license).toBe('CC BY-SA 4.0')
     let bytes = 0

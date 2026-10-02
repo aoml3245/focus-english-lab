@@ -18,7 +18,7 @@ Full terms: [`licenses/WORDNET-LICENSE.txt`](./licenses/WORDNET-LICENSE.txt) and
 
 ## Reproducible build
 
-The source databases are not checked into this repository. `private/vocabulary.json`, review ledgers and model caches also remain local-only. The browser artifact is exported only at completed 1,000-entry direct-review checkpoints with `scripts/export_public_vocabulary.py`; its manifest records the exact published count and per-shard hashes. Generated and edited learner sentences are functional study aids, not quotations from either source or from an official TOEFL exam.
+The source databases are not checked into this repository. `private/vocabulary.json`, review ledgers and model caches also remain local-only. The browser artifact is exported only at completed 1,000-entry direct-review checkpoints, or at the exact final corpus total after every entry is accepted, with `scripts/export_public_vocabulary.py`; its manifest records the exact published count, full corpus size, completion state, and per-shard hashes. Generated and edited learner sentences are functional study aids, not quotations from either source or from an official TOEFL exam.
 
 ## Original corpus fields
 
