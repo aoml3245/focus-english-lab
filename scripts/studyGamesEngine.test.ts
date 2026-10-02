@@ -54,6 +54,17 @@ describe('study game question generation', () => {
     expect(questions.map((question) => question.task)).toEqual(['translation', 'composition', 'translation', 'composition', 'translation', 'composition'])
   })
 
+  it('uses reviewed dictionary examples without including unreviewed or placeholder sentences', () => {
+    const reviewed = entry('reviewed', { source: 'dictionary', sentenceReviewed: true })
+    const unreviewed = entry('unreviewed', { source: 'dictionary' })
+    const template = entry('template', { source: 'dictionary', sentenceReviewed: true, example: 'In this vocabulary set, template refers to something.' })
+    const missing = entry('missing', { source: 'dictionary', sentenceReviewed: true, translation: '  ' })
+    const questions = buildStudyQuestions([entries[0], reviewed, unreviewed, template, missing], 'sentence', 10, { level: 'All', academicOnly: false }, () => 0.3)
+    expect(questions).toHaveLength(2)
+    expect(new Set(questions.map((question) => question.entry.word))).toEqual(new Set(['alpha', 'reviewed']))
+    expect(questions.map((question) => question.task)).toEqual(['translation', 'composition'])
+  })
+
   it('grades only objective spelling and synonym responses automatically', () => {
     const spelling = buildStudyQuestions(entries, 'vocabulary', 3, { level: 'B2', academicOnly: true }, () => 0.5)[2]
     expect(spelling.task).toBe('spelling')

@@ -4,7 +4,7 @@ import { loadFavorites, loadPersonalWords, requestVocabulary, type LearningEntry
 import MasteryCourse from './MasteryCourse'
 import { downloadPersonalVocabularyBackup, loadPersonalWordStats, recordPersonalWordAttempt, saveVocabularySession, selectBalancedPersonalReview } from './personalVocabulary'
 import { evaluateStudyAnswer, type StudyAnswerFeedback } from './studyGameCoach'
-import { buildStudyQuestions, createMasteryProgress, isObjectiveAnswerCorrect, masteryMinimumAttempts, refreshStudyDeck, selectStudyEntries, type MasteryProgress, type StudyGame, type StudyQuestion } from './studyGamesEngine'
+import { buildStudyQuestions, createMasteryProgress, hasStudySentence, isObjectiveAnswerCorrect, masteryMinimumAttempts, refreshStudyDeck, selectStudyEntries, type MasteryProgress, type StudyGame, type StudyQuestion } from './studyGamesEngine'
 
 const LEVELS = ['All', 'B1', 'B2', 'C1', 'C2']
 const SIZES = [10, 20, 30]
@@ -82,7 +82,7 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
     (scope !== 'all' || level === 'All' || entry.cefr === level) &&
     (scope !== 'all' || !academicOnly || Boolean(entry.academicCore)) &&
     (scope === 'all' || favorites.has(entry.word)) &&
-    (game === 'vocabulary' || entry.source === 'corpus'),
+    (game === 'vocabulary' || hasStudySentence(entry)),
   ).length, [academicOnly, favorites, game, level, scope, vocabulary])
 
   const resetAnswer = () => { evaluationRequest.current += 1; setResponse(''); setRevealed(false); setJudgment(null); setEvaluating(false); setFeedback(null); setFeedbackError('') }
@@ -147,13 +147,13 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
     <header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 홈으로</button></header>
     <main>
       {mastery ? <MasteryCourse entries={studyDeck} progress={mastery} onProgress={setMastery} onAttempt={(word, isCorrect) => { if (personalReview) recordPersonalWordAttempt(word, isCorrect) }} onComplete={finishPersonalMastery} onStudyAgain={repeatDeckStudy} onNewCourse={startMemorizing} onExit={abandonCourse} /> : memorizing ? <MemorizationDeck entries={studyDeck} page={deckPage} note={selectionNote} onPage={setDeckPage} onStartMastery={startMastery} onExit={abandonCourse} /> : !questions.length ? <>
-        <section className="study-hero"><span>VOCABULARY LAB</span><h1>외우는 대신,<br />꺼내 쓰는 연습.</h1><p>직접 검수를 마친 공개 단어장에서 뜻과 동의어를 확인하고, 문제 문맥 문장으로 해석과 영작을 연습합니다. 답은 언제든 바로 볼 수 있습니다.</p></section>
+        <section className="study-hero"><span>VOCABULARY LAB</span><h1>외우는 대신,<br />꺼내 쓰는 연습.</h1><p>직접 검수를 마친 공개 단어장에서 뜻과 동의어를 확인하고, 문제 문맥과 검수된 예문으로 해석과 영작을 연습합니다. 답은 언제든 바로 볼 수 있습니다.</p></section>
         <section className="study-mode-grid" aria-label="학습 게임 선택">
           <button className={game === 'vocabulary' ? 'study-mode study-mode--active' : 'study-mode'} onClick={() => setGame('vocabulary')}><span>01</span><strong>단어 시험</strong><p>뜻 입력 · 동의어 선택 · 철자 회상</p></button>
           <button className={game === 'sentence' ? 'study-mode study-mode--active' : 'study-mode'} onClick={() => setGame('sentence')}><span>02</span><strong>문장 미니게임</strong><p>문장 해석 · 한국어 문장 영작</p></button>
         </section>
         <section className="study-setup">
-          <div><h2>{game === 'vocabulary' ? '단어 시험 설정' : '문장 미니게임 설정'}</h2><p>{game === 'sentence' ? '문제은행에서 실제 사용된 문맥 예문만 출제합니다.' : '세 유형을 고르게 섞어 즉시 피드백합니다.'}</p></div>
+          <div><h2>{game === 'vocabulary' ? '단어 시험 설정' : '문장 미니게임 설정'}</h2><p>{game === 'sentence' ? '문제은행 문맥과 직접 검수한 사전 예문에서 출제합니다.' : '세 유형을 고르게 섞어 즉시 피드백합니다.'}</p></div>
           <div className="study-settings">
             <label><span>출제 범위</span><select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}><option value="all">전체 단어장</option><option value="saved">내 단어장 무작위</option><option value="balanced">내 단어장 맞춤 복습</option></select></label>
             <label><span>난이도</span><select value={level} disabled={scope !== 'all'} onChange={(event) => setLevel(event.target.value)}>{LEVELS.map((value) => <option key={value} value={value}>{value === 'All' ? '전체' : value}</option>)}</select></label>

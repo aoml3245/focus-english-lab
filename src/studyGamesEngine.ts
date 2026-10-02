@@ -171,7 +171,7 @@ export function buildStudyQuestions(
   random: () => number = Math.random,
 ) {
   const filtered = entries.filter((entry) => eligible(entry, filter))
-  const sentencePool = filtered.filter((entry) => entry.source === 'corpus' && entry.example && entry.translation)
+  const sentencePool = filtered.filter(hasStudySentence)
   const pool = game === 'sentence' ? sentencePool : filtered
   const selected = shuffle(pool, random).slice(0, Math.min(size, pool.length))
 
@@ -188,6 +188,15 @@ export function buildStudyQuestions(
     const task: VocabularyTask = desired === 'spelling' ? 'spelling' : 'meaning'
     return { id: `${entry.word}-${task}-${index}`, game, task, entry, answer: task === 'spelling' ? entry.word : entry.meaningKo }
   })
+}
+
+export function hasStudySentence(entry: LearningEntry) {
+  return Boolean(
+    (entry.source === 'corpus' || entry.sentenceReviewed) &&
+    entry.example?.trim() && entry.translation?.trim() &&
+    !/^In this vocabulary set\b/i.test(entry.example.trim()) &&
+    !/^이 단어장에서/.test(entry.translation.trim()),
+  )
 }
 
 export function normalizeSpelling(value: string) {

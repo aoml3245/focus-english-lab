@@ -30,6 +30,7 @@ export type LearningEntry = {
   savedAt?: string
   meaningReview?: string
   translationRepairs?: number
+  sentenceReviewed?: boolean
 }
 
 export type LocalLlmConfig = {
@@ -97,7 +98,7 @@ async function fetchPublicVocabulary(onProgress?: (progress: import('./cloudSync
   }
   await Promise.all(Array.from({ length: Math.min(4, manifest.chunks.length) }, () => worker()))
   onProgress?.({ phase: 'processing', completedChunks, totalChunks: manifest.chunks.length, downloadedBytes, totalBytes: manifest.totalBytes, loadedEntries, cachedChunks: 0 })
-  const entries = chunkEntries.flat()
+  const entries = chunkEntries.flat().map((entry) => ({ ...entry, sentenceReviewed: true }))
   if (entries.length !== manifest.entryCount) throw new Error('공개 기본 단어장 항목 수가 일치하지 않습니다.')
   onProgress?.({ phase: 'done', completedChunks, totalChunks: manifest.chunks.length, downloadedBytes, totalBytes: manifest.totalBytes, loadedEntries: entries.length, cachedChunks: 0 })
   return entries
@@ -108,7 +109,8 @@ export function requestVocabulary(onProgress?: (progress: import('./cloudSync').
     if (import.meta.env.PROD) return fetchPublicVocabulary(onProgress)
     const response = await fetch('/__private/vocabulary.json')
     if (!response.ok) throw new Error('단어장 데이터를 불러오지 못했습니다.')
-    return response.json() as Promise<LearningEntry[]>
+    const entries = await response.json() as Array<LearningEntry & { directReview?: boolean }>
+    return entries.map((entry) => ({ ...entry, sentenceReviewed: entry.directReview === true }))
   })()
   return vocabularyRequest
 }
