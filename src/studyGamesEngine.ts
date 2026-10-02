@@ -57,6 +57,16 @@ const shuffle = <T,>(values: T[], random: () => number) => {
 
 const unique = (values: string[]) => [...new Set(values)]
 
+// Saved courses keep their word order and progress, not stale dictionary text.
+// Pass the public-plus-personal vocabulary so learner overrides remain intact.
+export function refreshStudyDeck(deck: LearningEntry[], vocabulary: LearningEntry[]) {
+  const current = new Map(vocabulary.map((entry) => [entry.word, entry]))
+  return deck.map((entry) => {
+    const refreshed = current.get(entry.word)
+    return refreshed ? { ...entry, ...refreshed } : entry
+  })
+}
+
 export function masteryMinimumAttempts(wordCount: number) {
   return MASTERY_STAGES.reduce((total, stage) => total + stage.repetitions * wordCount, 0)
 }

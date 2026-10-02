@@ -4,7 +4,7 @@ import { loadFavorites, loadPersonalWords, requestVocabulary, type LearningEntry
 import MasteryCourse from './MasteryCourse'
 import { downloadPersonalVocabularyBackup, loadPersonalWordStats, recordPersonalWordAttempt, saveVocabularySession, selectBalancedPersonalReview } from './personalVocabulary'
 import { evaluateStudyAnswer, type StudyAnswerFeedback } from './studyGameCoach'
-import { buildStudyQuestions, createMasteryProgress, isObjectiveAnswerCorrect, masteryMinimumAttempts, selectStudyEntries, type MasteryProgress, type StudyGame, type StudyQuestion } from './studyGamesEngine'
+import { buildStudyQuestions, createMasteryProgress, isObjectiveAnswerCorrect, masteryMinimumAttempts, refreshStudyDeck, selectStudyEntries, type MasteryProgress, type StudyGame, type StudyQuestion } from './studyGamesEngine'
 
 const LEVELS = ['All', 'B1', 'B2', 'C1', 'C2']
 const SIZES = [10, 20, 30]
@@ -64,7 +64,9 @@ export default function StudyGames({ onBack }: { onBack: () => void }) {
       if (!active) return
       const merged = new Map(entries.map((entry) => [entry.word, entry]))
       for (const personal of loadPersonalWords()) merged.set(personal.word, { ...merged.get(personal.word), ...personal })
-      setVocabulary([...merged.values()])
+      const latest = [...merged.values()]
+      setVocabulary(latest)
+      setStudyDeck((deck) => refreshStudyDeck(deck, latest))
     }).catch((cause: unknown) => { if (active) setLoadError(cause instanceof Error ? cause.message : '단어 데이터를 불러오지 못했습니다.') })
     return () => { active = false; evaluationRequest.current += 1 }
   }, [])
