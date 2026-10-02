@@ -35,6 +35,9 @@
   "samplePassAfterCorrections": 300,
   "unresolvedSampleFindings": 0,
   "postSelectionCorrections": 41,
+  "supplementarySampleRereads": 2,
+  "supplementaryGlossReviewCount": 251,
+  "sharedExampleTranslationReviewCount": 38,
   "sampleWords": [
     "social",
     "difficult",

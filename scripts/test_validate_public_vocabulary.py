@@ -46,3 +46,10 @@ class PublicIntegrityTests(unittest.TestCase):
             self.fixture(path, {"example": "The sam___ was ready."})
             with self.assertRaises(ValueError):
                 validate(path, 1)
+
+    def test_tautological_primary_gloss_is_rejected(self):
+        with tempfile.TemporaryDirectory() as name:
+            path = Path(name)
+            self.fixture(path, {"meaningEn": "sample", "meanings": [{"senseId": "test-n", "partOfSpeech": "noun", "meaningKo": "표본", "meaningEn": "sample", "synonyms": []}]})
+            with self.assertRaises(ValueError):
+                validate(path, 1)

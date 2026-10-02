@@ -9,7 +9,7 @@ import json
 import re
 from pathlib import Path
 
-from vocabulary_validation import ALLOWED_PARTS_OF_SPEECH, has_complete_study_example
+from vocabulary_validation import ALLOWED_PARTS_OF_SPEECH, has_complete_study_example, has_informative_primary_gloss
 
 FORBIDDEN_KEYS = {
     "uid", "userid", "email", "account", "access_token", "refresh_token",
@@ -71,7 +71,7 @@ def validate(directory, expected_count):
         errors.append("Manifest aggregate mismatch")
     for entry in entries:
         senses = entry.get("meanings", [])
-        if not 1 <= len(senses) <= 3 or not has_complete_study_example(entry):
+        if not 1 <= len(senses) <= 3 or not has_complete_study_example(entry) or not has_informative_primary_gloss(entry):
             errors.append("Invalid sense count or unfinished example: " + entry["word"])
             continue
         if any(entry.get(key) != senses[0].get(key) for key in ("meaningKo", "meaningEn", "partOfSpeech", "synonyms")):
