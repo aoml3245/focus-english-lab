@@ -10,7 +10,7 @@ The generated public vocabulary checkpoints and private build artifact incorpora
 - Used fields: Korean headword meanings, English glosses, IPA, CEFR metadata, and frequency ranks.
 - Changes: Valid problem-corpus entries are retained; additional B1–C2 entries are selected by frequency, filtered, matched to WordNet senses, and combined with independently phrased learner sentences. The final corpus has 29,976 entries whose provided meanings, definitions, strict synonyms, examples and translations were directly AI-reviewed; local-model drafts were not accepted as authoritative.
 
-The derived lexical dataset is distributed under CC BY-SA 4.0. This notice does not change the license or ownership of the application's independently written question corpus or source code.
+The derived lexical dataset is distributed under CC BY-SA 4.0. This notice does not change the license or ownership of the application's independently written question corpus or source code. Release 0.1.83 adds a completed second pass on the 1,996 corpus entries and a new 300-entry stratified audit, including independent cross-review and explicit rereads of actual corrected content; upstream attribution and licenses remain unchanged.
 
 ### Retained upstream credits
 
