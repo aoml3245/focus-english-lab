@@ -133,7 +133,7 @@ const sentenceData: SentenceDatum[] = [
   ['Why question the apparent improvement?', 'However impressive the average may appear', ['it conceals', 'the extent to which', 'outcomes varied', 'among districts'], 'f15-however-adjective-concessive'],
   ['What made comparison possible?', 'By having preserved every intermediate file', ['the team enabled', 'later auditors', 'to reconstruct', 'each transformation'], 'f15-perfect-gerund-by-clause'],
   ['When would the claim be credible?', 'Only if the same pattern emerged under a preregistered test', ['could the result', 'be distinguished', 'from a hypothesis', 'chosen afterward'], 'f15-only-if-modal-inversion'],
-  ['Why did the translator retain the metaphor?', 'Not so much because it was literally transparent', ['as because', 'its strangeness', 'was central', 'to the narrator’s voice'], 'f15-not-so-much-as'],
+  ['Why did the translator retain the metaphor?', 'The translator retained it not so much because it was literally transparent', ['as because', 'its strangeness', 'was central', 'to the narrator’s voice'], 'f15-not-so-much-as'],
   ['What explains the delayed response?', 'The more deeply the material had been frozen', ['the longer', 'microbial activity took', 'to resume', 'after thawing'], 'f15-correlative-comparative-perfect'],
   ['Why was the amendment necessary?', 'Lest participants mistake passive tracking for occasional surveys', ['the consent form', 'was revised', 'to specify', 'continuous collection'], 'f15-lest-subjunctive-purpose'],
   ['How should the outlier be treated?', 'Whether or not it changes the conclusion', ['the observation', 'should remain flagged', 'with its original', 'quality record'], 'f15-whether-or-not-concessive'],

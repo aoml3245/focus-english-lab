@@ -134,7 +134,7 @@ const sentenceData: SentenceDatum[] = [
   ['How did the model perform?', 'The farther predictions extended beyond the sampled range', ['the more heavily', 'they depended', 'on assumptions', 'about functional form'], 'f16-double-comparative-dependence'],
   ['Why keep the damaged image?', 'Damaged though the panel may be', ['its altered surface', 'preserves evidence', 'of successive', 'political interventions'], 'f16-adjective-though-inversion'],
   ['What should the report acknowledge?', 'There being no independent record of exposure', ['the estimated dose', 'cannot be verified', 'from the shared badge', 'after the fact'], 'f16-existential-absolute-clause'],
-  ['Could earlier action have helped?', 'If the warning system were functioning now as designed', ['the overnight excursion', 'would likely have been', 'detected', 'before morning'], 'f16-mixed-counterfactual-present-past'],
+  ['Could earlier action have helped?', 'If the warning system had been functioning as designed', ['the overnight excursion', 'would likely have been', 'detected', 'before morning'], 'f16-past-counterfactual-perfect'],
   ['Why was the comparison persuasive?', 'Not only were the samples collected independently', ['but their analyses', 'were also performed', 'by laboratories', 'using blinded codes'], 'f16-not-only-correlative-inversion'],
   ['What makes the interpretation provisional?', 'Much remains to be established as to whether', ['the observed damage', 'preceded burial', 'or resulted', 'from later excavation'], 'f16-as-to-whether-embedded'],
   ['Why did the engineer reject the patch?', 'It was incompatible to such a degree that', ['seasonal movement', 'would have concentrated', 'stress along', 'the repaired edge'], 'f16-to-such-degree-result'],

@@ -1,6 +1,7 @@
 import { createAdvancedAuthoredForm } from './advancedFormGenerator'
 import type { AdvancedFormConfig, LogicBrief, PracticalBrief } from './advancedFormGenerator'
 import type { SentenceDatum } from './authoredFormHelpers'
+import { getAdvancedSentences } from './advancedSentences'
 
 type LogicSeed = [topic: string, label: string, principle: string]
 type PracticalSeed = [topic: string, label: string, notice: string, inference: string]
@@ -44,32 +45,8 @@ function makePractical(seed: PracticalSeed, index: number): PracticalBrief {
   return { topic: seed[0], label: seed[1], notice: seed[2], inference: seed[3], difficulty: index % 5 === 0 ? 'B1' : 'B2' }
 }
 
-function sentences(form: number, labels: string[]): SentenceDatum[] {
-  const starters = [
-    `Only after the ${labels[0]} baseline had been reconstructed`,
-    `Had the ${labels[1]} proxy been calibrated independently`,
-    `Not until the ${labels[2]} sample was disaggregated`,
-    `However persuasive the ${labels[3]} average may appear`,
-    `So sensitive was ${labels[4]} to the chosen boundary that`,
-    `Were the ${labels[5]} mechanism genuinely causal`,
-    `The more carefully ${labels[6]} uncertainty is propagated`,
-    `What the ${labels[7]} comparison cannot establish is`,
-    `There being no stable ${labels[8]} reference`,
-    `Rarely does a single ${labels[9]} observation reveal`,
-  ]
-  const fragments = [
-    ['could researchers', 'separate the trend', 'from inherited', 'measurement drift', 'with confidence'],
-    ['its fluctuations', 'might have provided', 'a defensible', 'estimate of', 'the process'],
-    ['did the subgroup', 'reversal become', 'visible to', 'the research', 'team'],
-    ['it cannot', 'by itself', 'exclude', 'a plausible', 'confounder'],
-    ['minor revisions', 'produced', 'substantially different', 'historical', 'inferences'],
-    ['the intervention', 'should alter', 'the predicted', 'intermediate outcome', 'first'],
-    ['the less likely', 'a nominal', 'difference is', 'to seem', 'decisive'],
-    ['whether the same', 'process would', 'operate beyond', 'the observed', 'setting'],
-    ['the estimated', 'departure remained', 'conditional on', 'the normalization', 'procedure'],
-    ['which of', 'several compatible', 'mechanisms actually', 'generated the', 'pattern'],
-  ]
-  return starters.map((starter, index) => [`What qualification belongs in the ${labels[index]} interpretation?`, starter, fragments[index], `f${form}-advanced-structure-${index}`])
+function sentences(form: number, _labels: string[]): SentenceDatum[] {
+  return getAdvancedSentences(form)
 }
 
 function materialize(seed: ThemeSeed): AdvancedFormConfig {
@@ -167,7 +144,7 @@ const FORM_24: ThemeSeed = {
     ['언어실험', 'headset profile', 'Load the participant-specific hearing profile before the practice trial. Changing amplification after the scored block begins requires restarting that block.', 'Configure amplification before scored responses start.'],
     ['경제자료', 'seasonal revision', 'The newly released employment series is preliminary. Cite its vintage date so later revisions can be distinguished from transcription errors.', 'Record which release vintage was used in the analysis.'],
     ['포커스그룹', 'observer consent', 'An additional observer may enter the focus group only if the consent form lists observers and every participant agrees before recording.', 'Confirm explicit consent before adding the observer.'],
-    ['시험센터', 'adaptive test pause', 'A proctor may pause the adaptive test for a documented technical interruption, but cannot reopen an answered item.', 'Resume from the next item after recording the interruption.'],
+    ['시험센터', 'adaptive test pause', 'A proctor may pause the adaptive test for a documented technical interruption, but cannot reopen an answered item.', 'Document the interruption and do not reopen an item already answered.'],
     ['학생지원', 'benefit clinic', 'The benefits clinic accepts walk-ins Tuesday, while document review remains appointment-only because records must be assigned to a caseworker.', 'Book an appointment for document review rather than joining the walk-in line.'],
     ['연구패널', 'attrition call', 'Follow-up calls begin Wednesday. Remove participants who withdrew consent before loading numbers into the dialer.', 'Exclude withdrawn participants before outreach begins.'],
     ['세미나', 'anonymous question', 'Anonymous seminar questions will be read aloud, but submissions containing identifying case details will be returned privately for revision.', 'Revise a question that could identify an individual case.'],
@@ -231,7 +208,7 @@ const FORM_26: ThemeSeed = {
     ['로봇공학', 'sensor observability', 'A system state is observable only when its measurements contain enough independent information to infer that state.'],
     ['에너지공학', 'battery solid electrolyte', 'A solid electrolyte can reduce flammable liquid components while introducing contact and mechanical challenges.'],
     ['구조공학', 'progressive collapse', 'Local structural damage can propagate when alternative load paths lack sufficient capacity.'],
-    ['열역학', 'exergy destruction', 'Irreversible processes consume the portion of energy capable of producing useful work.'],
+    ['열역학', 'exergy destruction', 'Irreversible processes reduce the capacity to produce useful work relative to a reference environment.'],
     ['광학', 'metamaterial resonance', 'Subwavelength structures can produce effective electromagnetic responses unavailable in their bulk constituents.'],
     ['제어공학', 'integrator windup', 'A saturated actuator can allow accumulated control error to drive a large overshoot after saturation ends.'],
     ['토목공학', 'soil liquefaction', 'Cyclic loading can raise pore pressure until saturated granular soil loses effective strength.'],
@@ -320,7 +297,7 @@ const FORM_28: ThemeSeed = {
     ['대기화학', 'secondary aerosol', 'Atmospheric reactions transform gaseous precursors into particulate matter after emission.'],
     ['복원생태학', 'shifting baseline', 'Each generation may accept the already-degraded environment of its youth as normal.'],
     ['기후과학', 'compound event', 'Moderate hazards can interact across space or time to create impacts larger than either hazard alone.'],
-    ['해양학', 'ocean deoxygenation', 'Warmer water holds less oxygen while stratification and respiration can further reduce ventilation.'],
+    ['해양학', 'ocean deoxygenation', 'Warmer water holds less oxygen, while stratification limits replenishment and respiration consumes oxygen at depth.'],
     ['생태독성학', 'bioaccumulation', 'An organism can retain a contaminant faster than it eliminates the substance.'],
     ['산림과학', 'assisted migration', 'Managers may move populations toward projected suitable climates when natural dispersal appears too slow.'],
     ['도시생태학', 'heat island inequity', 'Tree cover, surface materials, housing, and occupation distribute heat exposure unevenly within a city.'],

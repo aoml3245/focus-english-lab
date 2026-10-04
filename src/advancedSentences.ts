@@ -1,0 +1,108 @@
+import type { SentenceDatum } from './authoredFormHelpers'
+
+// Each task has its own situation; grammatical complexity does not depend on
+// inserting a technical label into a shared, semantically unrelated template.
+const sentencesByForm: Record<number, SentenceDatum[]> = {
+  23: [
+    ['When could the geologists date the lava flow?', 'Only after the magnetic pattern had been matched', ['could the team', 'assign an age', 'to the rocks', 'with reasonable confidence'], 'f23-only-after-inversion'],
+    ['Why does a DNA detection not prove that a fish lives here?', 'DNA carried downstream from another lake', ['may reach', 'the sampling site', 'even when', 'the fish itself', 'is absent'], 'f23-participial-modifier-concession'],
+    ['What made the isotope calculation possible?', 'Knowing the composition of both sources', ['allowed the researchers', 'to estimate', 'how much', 'each had contributed', 'to the mixture'], 'f23-gerund-subject-embedded-question'],
+    ['Could the missing tree ring have been overlooked?', 'Had the wood been examined in isolation', ['the missing ring', 'might have escaped', 'notice until', 'the chronology', 'was checked again'], 'f23-inverted-past-counterfactual'],
+    ['Why were plankton sampled at different times?', 'The researchers needed to establish whether', ['the animals remained', 'at the same depth', 'or moved upward', 'after darkness', 'reduced the risk'], 'f23-whether-coordination'],
+    ['Can the field course lend me a receiver?', 'You may borrow one provided that', ['you complete', 'the safety training', 'and return', 'the equipment', 'before Friday'], 'f23-provided-that-condition'],
+    ['Why did the lab cancel today’s measurements?', 'The reference sensor having failed its daily check', ['the technician postponed', 'the measurements until', 'a replacement', 'could be tested', 'against the standard'], 'f23-perfect-absolute-passive'],
+    ['Where should I put the unlabelled samples?', 'The supervisor asked that', ['every unlabelled sample', 'be kept', 'in a separate', 'sealed container', 'pending identification'], 'f23-mandative-subjunctive'],
+    ['Why did you have to reprint the poster?', 'No sooner had we printed the poster', ['than we discovered', 'that the legend', 'referred to', 'an earlier version', 'of the map'], 'f23-no-sooner-than'],
+    ['Why is the team checking the transport log?', 'What we need to find out is', ['whether any samples', 'were left', 'outside the refrigerator', 'during the journey', 'to campus'], 'f23-cleft-indirect-question'],
+  ],
+  24: [
+    ['Does recalling a memory always change it?', 'Although retrieval can make some memories vulnerable', ['it does not', 'follow that', 'every remembered event', 'is rewritten', 'each time'], 'f24-concession-extraposition'],
+    ['How did the partners settle on a shared term?', 'The more often they described the same object', ['the more consistently', 'they used', 'the expression', 'they had agreed', 'on earlier'], 'f24-correlative-comparative-relative'],
+    ['Why did the interest-rate change have different effects?', 'Households whose loans carried variable rates', ['faced higher payments', 'sooner than', 'those whose rates', 'had been fixed', 'for several years'], 'f24-whose-relative-comparison'],
+    ['Why should that variable be excluded from adjustment?', 'Because it is affected by the treatment', ['adjusting for it', 'could remove', 'part of', 'the effect', 'we wish to estimate'], 'f24-causal-clause-gerund'],
+    ['Why does a difficult test item need further investigation?', 'An item that is harder for one group', ['may reflect', 'differences in instruction', 'rather than', 'a difference', 'in the intended skill'], 'f24-relative-rather-than'],
+    ['Can we attend the workshop without registering?', 'Under no circumstances will the organizer admit', ['participants who', 'have not completed', 'the registration form', 'before the doors', 'open tomorrow'], 'f24-negative-inversion-relative'],
+    ['Why did you leave the seminar early?', 'I would have stayed for the discussion', ['if my appointment', 'had not been', 'moved forward', 'at such', 'short notice'], 'f24-third-conditional'],
+    ['What did the advisor ask us to revise?', 'It was the explanation of the sampling method', ['that she wanted', 'us to expand', 'before submitting', 'the revised paper', 'to the journal'], 'f24-it-cleft-infinitive'],
+    ['How can we make the survey easier to follow?', 'Rather than asking two questions at once', ['we should split', 'the item', 'into two parts', 'that respondents', 'can answer separately'], 'f24-rather-than-gerund-relative'],
+    ['Did the room change cause any problems?', 'So little notice were the students given', ['that several', 'arrived at', 'the original room', 'after the seminar', 'had begun'], 'f24-so-little-passive-inversion'],
+  ],
+  25: [
+    ['Does the protein always settle into the same shape?', 'Whether a protein reaches its usual folded state', ['depends partly on', 'the conditions', 'under which', 'it is allowed', 'to fold'], 'f25-whether-subject-preposition-relative'],
+    ['Why were the older immune responses considered?', 'Previous exposure may influence which antibodies', ['are produced', 'when the body', 'encounters a related', 'but different', 'strain later'], 'f25-embedded-question-passive'],
+    ['How did drought interrupt water transport?', 'As air entered the tree’s water conduits', ['it broke', 'the continuous columns', 'on which', 'transport from', 'the roots depended'], 'f25-as-causal-preposition-relative'],
+    ['When did the bacterial population change its behavior?', 'Not until the chemical signal had accumulated', ['did the bacteria', 'begin producing', 'the substance', 'that protected', 'the colony'], 'f25-not-until-inversion'],
+    ['What could explain the coexistence of both variants?', 'One possibility is that', ['each variant', 'is favored', 'under a different', 'set of conditions', 'in the same habitat'], 'f25-that-complement-passive'],
+    ['Can I move the cultures to another shelf?', 'Before moving any of the cultures', ['you must check', 'whether the labels', 'match the locations', 'recorded in', 'the laboratory log'], 'f25-before-gerund-indirect-question'],
+    ['Why did the technician ask us to wait?', 'The incubator was not stable enough', ['for the cultures', 'to be transferred', 'without exposing them', 'to an avoidable', 'temperature change'], 'f25-enough-for-passive-infinitive'],
+    ['Would the specimens have survived the delay?', 'But for the insulated container', ['the specimens', 'would have warmed', 'beyond the limit', 'specified in', 'the transport protocol'], 'f25-but-for-counterfactual'],
+    ['What must be done with the damaged vial?', 'The vial should remain sealed until', ['a technician', 'has assessed', 'whether its contents', 'can be handled', 'without contamination'], 'f25-until-perfect-embedded-question'],
+    ['Why did you request a second microscope session?', 'I need another session so that', ['I can examine', 'the sections', 'that were missing', 'from the tray', 'last week'], 'f25-purpose-relative-clause'],
+  ],
+  26: [
+    ['Why did the new solar cell lose performance?', 'Much as the coating improved the initial output', ['it did little', 'to prevent', 'moisture from damaging', 'the active layer', 'during storage'], 'f26-much-as-prevent-gerund'],
+    ['What happened when the airflow separated?', 'Once the air no longer followed the wing’s surface', ['the pressure pattern', 'changed in ways', 'that reduced lift', 'and increased', 'drag'], 'f26-once-relative-coordinate'],
+    ['Can a single sensor recover every internal state?', 'For all the information the sensor provides', ['some internal states', 'remain impossible', 'to distinguish', 'without an additional', 'measurement'], 'f26-for-all-concession-infinitive'],
+    ['Why was a smaller battery current recommended?', 'Were the current to remain above the safe limit', ['heat would accumulate', 'faster than', 'the cooling system', 'could remove it', 'from the cells'], 'f26-were-to-counterfactual-comparison'],
+    ['Why was the model tested after one support failed?', 'The engineers wanted to determine how', ['the remaining structure', 'would redistribute', 'the load', 'if a column', 'were removed'], 'f26-indirect-question-hypothetical'],
+    ['Can I use the workshop drill by myself?', 'Only students who have completed the induction', ['are permitted', 'to operate', 'the drill', 'without direct', 'supervision'], 'f26-only-subject-relative-passive'],
+    ['Why did you stop the controller test?', 'I stopped it as soon as', ['the output exceeded', 'the range', 'that the motor', 'could sustain', 'without overheating'], 'f26-as-soon-as-relative'],
+    ['Did the design meet all the requirements?', 'Not only did it support the required load', ['but it also', 'remained within', 'the size limit', 'set by', 'the competition rules'], 'f26-not-only-but-also'],
+    ['Why must the calibration record stay with the instrument?', 'Without the record, future users would not know', ['when the instrument', 'had last been', 'checked against', 'a reference', 'of known accuracy'], 'f26-without-embedded-past-perfect'],
+    ['What did the supervisor insist on before testing?', 'The supervisor insisted that', ['every protective guard', 'be installed', 'before anyone', 'switched on', 'the machine'], 'f26-mandative-before-clause'],
+  ],
+  27: [
+    ['Why did the distant galaxy appear distorted?', 'Light passing near the foreground galaxy', ['was bent', 'by its gravity', 'before reaching', 'the telescope', 'on Earth'], 'f27-participial-subject-passive'],
+    ['Does tidal locking mean that a moon never rotates?', 'A tidally locked moon turns on its axis', ['in the same', 'amount of time', 'that it takes', 'to complete', 'one orbit'], 'f27-relative-time-comparison'],
+    ['Why was the star’s distance estimate revised?', 'Had its intrinsic brightness been known more accurately', ['the team', 'could have estimated', 'its distance', 'with a smaller', 'margin of uncertainty'], 'f27-had-perfect-modal-perfect'],
+    ['What suggested that another planet was present?', 'Small departures from the expected transit times', ['were consistent with', 'the pull', 'of another planet', 'that had not', 'been observed directly'], 'f27-preposition-relative-perfect-passive'],
+    ['Why is adaptive optics useful from the ground?', 'By correcting distortions introduced by the atmosphere', ['the system', 'allows astronomers', 'to obtain', 'sharper images', 'of distant objects'], 'f27-by-gerund-causative-infinitive'],
+    ['Can the club use the observatory tonight?', 'Whether the session goes ahead', ['will depend on', 'how clear', 'the sky remains', 'after the clouds', 'reach the coast'], 'f27-whether-subject-indirect-question'],
+    ['Why did you turn off the flashlights?', 'We turned them off so that', ['everyone’s eyes', 'could adjust', 'to the darkness', 'before the first', 'observation began'], 'f27-so-that-purpose'],
+    ['When did the technician notice the tracking error?', 'Scarcely had the telescope begun to move', ['when the technician', 'noticed that', 'its position differed', 'from the coordinates', 'on the screen'], 'f27-scarcely-when-inversion'],
+    ['What did the instructor ask us to record?', 'In addition to noting the time', ['we were asked', 'to record', 'the conditions', 'under which', 'each image was taken'], 'f27-in-addition-gerund-relative'],
+    ['Will one clear night be enough for the project?', 'Clear though tonight’s sky may be', ['we will need', 'observations from', 'several nights', 'to check', 'whether the pattern persists'], 'f27-adjective-though-indirect-question'],
+  ],
+  28: [
+    ['Why did groundwater quality respond so slowly?', 'Even after fertilizer use had fallen', ['water containing', 'older contamination', 'continued to reach', 'the well', 'from nearby fields'], 'f28-even-after-participial'],
+    ['Why did the fire leave some patches unburned?', 'The fire spread unevenly because', ['vegetation and moisture', 'varied across', 'the area', 'through which', 'it passed'], 'f28-because-preposition-relative'],
+    ['What makes a shifting baseline hard to detect?', 'Each generation may regard the conditions it first encounters', ['as normal', 'without realizing', 'how different', 'they were', 'for earlier observers'], 'f28-regard-as-gerund-question'],
+    ['Why did the combined event cause greater damage?', 'When the flood coincided with the power failure', ['people lost access', 'to the pumps', 'they needed', 'to remove water', 'from their homes'], 'f28-when-defining-relative'],
+    ['How can a pollutant reach predators at a higher concentration?', 'A substance that organisms retain rather than excrete', ['can accumulate', 'as predators', 'consume prey', 'that have already', 'absorbed it'], 'f28-relative-rather-than-as'],
+    ['Why was the stream survey postponed?', 'With the access road still under water', ['the students', 'could not reach', 'the sampling point', 'without crossing', 'a closed bridge'], 'f28-with-absolute-without-gerund'],
+    ['Should we publish the location of the rare plants?', 'The coordinator would rather we', ['kept the coordinates', 'within the team', 'until the landowner', 'had approved', 'their release'], 'f28-would-rather-subordinate-past'],
+    ['What made the afternoon fieldwork unsafe?', 'So intense was the heat on the exposed path', ['that the instructor', 'decided to move', 'the remaining work', 'to an earlier', 'time the next day'], 'f28-so-adjective-inversion-result'],
+    ['Do the volunteers need special equipment?', 'Anyone taking part in the river cleanup', ['must wear', 'the protective gloves', 'provided by', 'the organizer', 'at the meeting point'], 'f28-participial-relative-passive-modifier'],
+    ['Why did you keep both versions of the map?', 'Keeping both versions makes it possible', ['to identify', 'which boundaries', 'were changed', 'after the residents', 'reviewed the plan'], 'f28-gerund-extraposition-question'],
+  ],
+  29: [
+    ['Why did the servers wait before accepting the update?', 'The system required several servers to agree', ['on the order', 'in which', 'the changes', 'would be added', 'to the shared record'], 'f29-require-infinitive-preposition-relative'],
+    ['Why did accuracy fall at the new hospital?', 'The model encountered images that', ['differed in appearance', 'from those on', 'which it had', 'been trained at', 'the original hospital'], 'f29-comparison-preposition-relative'],
+    ['How could the attacker infer a secret value?', 'By measuring how long the calculation took', ['the attacker', 'obtained clues', 'that were absent', 'from the program’s', 'visible output'], 'f29-by-gerund-embedded-question'],
+    ['What went wrong with the two database transactions?', 'Although each transaction saw a consistent snapshot', ['their combined changes', 'violated a constraint', 'that neither', 'could detect', 'on its own'], 'f29-concession-relative-modal'],
+    ['Why did the robot keep exploiting the shortcut?', 'What the reward encouraged was', ['behavior that', 'increased the score', 'without completing', 'the task', 'as intended'], 'f29-wh-cleft-without-gerund'],
+    ['Can I share the dataset with another class?', 'You should check whether the agreement allows', ['the data', 'to be shared', 'with students', 'outside the course', 'for this purpose'], 'f29-check-whether-passive-infinitive'],
+    ['Why was the release delayed?', 'Until the security review has been completed', ['the team', 'will keep', 'the new version', 'off the public', 'download page'], 'f29-until-perfect-future'],
+    ['Could the lost work have been recovered?', 'If we had enabled the backup before editing', ['we could have', 'restored the files', 'that were deleted', 'during the failed', 'update'], 'f29-third-conditional-passive-relative'],
+    ['Why do we need to document the old interface?', 'However inconvenient the old interface may seem', ['other programs', 'still depend on', 'the behavior', 'that its users', 'have come to expect'], 'f29-however-concessive-relative'],
+    ['What surprised you about the debugging session?', 'Little did we realize', ['that the error', 'would disappear', 'once the clock', 'on the server', 'was corrected'], 'f29-little-inversion-once'],
+  ],
+  30: [
+    ['What did the hidden paint layer reveal?', 'Beneath the finished portrait were outlines', ['that showed', 'how the artist', 'had changed', 'the position', 'of the sitter’s hand'], 'f30-locative-inversion-question'],
+    ['Why did the chord sound different on the old keyboard?', 'Because the intervals were tuned differently', ['the same notes', 'did not produce', 'exactly the sound', 'that modern listeners', 'expected'], 'f30-causal-passive-relative'],
+    ['Why could the manuscript not be assigned to one branch?', 'The copyist appears to have consulted', ['more than', 'one source', 'while preparing', 'the text', 'that survives today'], 'f30-perfect-infinitive-while-gerund'],
+    ['What condition applied to reusing the warehouse?', 'The planning board approved the conversion on condition that', ['the original facade', 'be preserved', 'and made visible', 'from the street', 'after construction'], 'f30-on-condition-subjunctive'],
+    ['Can a recording preserve everything about a performance?', 'Valuable though a recording may be', ['it cannot capture', 'every interaction', 'between the performers', 'and the audience', 'in the room'], 'f30-adjective-though-concessive'],
+    ['Why must we test the cleaning gel first?', 'Before applying it to the painted surface', ['we need', 'to establish', 'whether it removes', 'any material', 'we intend to preserve'], 'f30-before-gerund-question-relative'],
+    ['Can students consult the original manuscript?', 'Students may consult the original only if', ['a member', 'of the archive', 'staff is present', 'throughout', 'the appointment'], 'f30-only-if-condition'],
+    ['When did the curator discover the missing ownership record?', 'It was while preparing the exhibition catalogue', ['that the curator', 'found a gap', 'in the record', 'of who', 'had owned the painting'], 'f30-it-cleft-while-question'],
+    ['Why did you choose a replica for the demonstration?', 'Using the replica allowed us', ['to show', 'how the mechanism', 'worked without', 'putting the original', 'at risk'], 'f30-gerund-subject-question-without'],
+    ['Would an earlier booking have secured the rehearsal room?', 'Had we reserved it before the timetable was published', ['the room', 'would have been', 'available for', 'our rehearsal', 'on Thursday'], 'f30-inverted-third-conditional'],
+  ],
+}
+
+export function getAdvancedSentences(form: number): SentenceDatum[] {
+  const sentences = sentencesByForm[form]
+  if (!sentences) throw new Error(`No authored sentence tasks for form ${form}`)
+  return sentences
+}

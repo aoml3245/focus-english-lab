@@ -29,30 +29,36 @@ export function Timer({ seconds, onExpire, hidden = false, paused = false }: { s
   return <span className={left <= 15 ? 'timer timer--low' : 'timer'} aria-label={hidden ? '시간 숨김' : `남은 시간 ${mm}분 ${ss}초`}>{hidden ? '--:--' : `${mm}:${ss}`}</span>
 }
 
-export function AudioPrompt({ text, speechMode, onPlaybackChange }: { text: string; speechMode: SpeechMode; onPlaybackChange?: (active: boolean) => void }) {
+export function AudioPrompt({ text, speechMode, onPlaybackChange, onPlayed }: { text: string; speechMode: SpeechMode; onPlaybackChange?: (active: boolean) => void; onPlayed?: () => void }) {
   const [state, setState] = useState<'preparing' | 'ready' | 'playing' | 'played' | 'error'>('preparing')
   const [status, setStatus] = useState('음성을 변환하고 있습니다.')
   const [attempt, setAttempt] = useState(0)
   const started = useRef(false)
+  const playbackGeneration = useRef(0)
   const play = useCallback(async () => {
     if (started.current || state !== 'ready') return
     started.current = true
+    const generation = playbackGeneration.current
     onPlaybackChange?.(true)
     setState('playing')
     setStatus('재생 중…')
     try {
       const result = await playTTS(text, loadVoiceProfileId(), (message) => {
-        setStatus(message)
+        if (generation === playbackGeneration.current) setStatus(message)
       }, { maxWaitMs: 60_000, speechMode })
-      if (result === 'cancelled') return
+      if (generation !== playbackGeneration.current) return
+      if (result === 'cancelled') { started.current = false; setState('ready'); setStatus('재생이 취소됐습니다. 다시 재생할 수 있습니다.'); return }
       setState('played')
+      onPlayed?.()
       setStatus(result === 'fallback' ? '시스템 음성으로 재생했습니다.' : '한 번 재생했습니다.')
     } catch (error) {
+      if (generation !== playbackGeneration.current) return
       setState('error')
       setStatus(error instanceof Error ? error.message : '오디오를 재생하지 못했습니다.')
-    } finally { onPlaybackChange?.(false) }
-  }, [onPlaybackChange, speechMode, state, text])
+    } finally { if (generation === playbackGeneration.current) onPlaybackChange?.(false) }
+  }, [onPlaybackChange, onPlayed, speechMode, state, text])
   useEffect(() => {
+    playbackGeneration.current += 1
     stopTTS()
     const controller = new AbortController()
     started.current = false
@@ -73,6 +79,7 @@ export function AudioPrompt({ text, speechMode, onPlaybackChange }: { text: stri
       })
       .finally(() => { if (!controller.signal.aborted) onPlaybackChange?.(false) })
     return () => {
+      playbackGeneration.current += 1
       controller.abort()
       stopTTS()
       onPlaybackChange?.(false)

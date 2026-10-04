@@ -33,7 +33,7 @@ const jaccard = (left: Set<string>, right: Set<string>) => {
 }
 
 describe('directly authored TOEFL-style bank', () => {
-  it('materializes fixed, disjoint authored forms with the official section counts', () => {
+  it('materializes fixed, disjoint practice forms with the documented section counts', () => {
     expect(AUTHORED_FORMS).toHaveLength(30)
     const used = new Set<string>()
     for (const form of AUTHORED_FORMS) {
@@ -62,7 +62,7 @@ describe('directly authored TOEFL-style bank', () => {
     expect(QUESTION_BANK.some((item) => item.id.startsWith('x-') || item.id.startsWith('n-'))).toBe(false)
   })
 
-  it('keeps official-style stimulus lengths and cloze structure', () => {
+  it('keeps documented mini-practice stimulus lengths and C-test structure', () => {
     const cloze = QUESTION_BANK.filter((item) => item.kind === 'complete-words')
     expect(cloze).toHaveLength(92)
     for (const item of cloze) {
@@ -180,15 +180,21 @@ describe('directly authored TOEFL-style bank', () => {
     expect(countReadingScoredItems(second)).toBe(50)
   })
 
-  it('prevents repeated visible questions, choices, and open-task scripts across the full bank', () => {
+  it('prevents duplicate questions and ambiguous within-question choices, without forcing unnatural reply wording', () => {
     expect(repeated(QUESTION_BANK.map((item) => item.prompt || ''))).toEqual([])
-    expect(repeated(QUESTION_BANK.flatMap((item) => item.options || []))).toEqual([])
+    // Natural replies may recur in different situations. Requiring every
+    // option string in the entire bank to be unique encouraged topic-label
+    // stuffing rather than meaningful variation. The complete question must
+    // differ and its own four alternatives must be distinct.
+    const choiceQuestions = QUESTION_BANK.filter((item) => item.options?.length)
+    for (const item of choiceQuestions) expect(repeated(item.options!), item.id).toEqual([])
+    expect(repeated(choiceQuestions.map((item) => `${item.passage || item.audioText || ''} ${item.prompt || ''} ${(item.options || []).map(normalize).sort().join(' ; ')}`))).toEqual([])
     expect(repeated(QUESTION_BANK.filter((item) => item.kind === 'repeat' || item.kind === 'interview').map((item) => item.audioText || ''))).toEqual([])
     expect(repeated(QUESTION_BANK.filter((item) => item.kind === 'email' || item.kind === 'discussion').map((item) => item.prompt || ''))).toEqual([])
     expect(repeated(QUESTION_BANK.filter((item) => item.kind === 'discussion').map((item) => item.passage || ''))).toEqual([])
   })
 
-  it('does not repeat complete sentences across distinct long-stimulus groups', () => {
+  it('does not recycle content sentences, while allowing a small shared procedural notice', () => {
     const representatives = new Map<string, string>()
     for (const item of QUESTION_BANK) {
       const text = item.passage || item.audioText || ''
@@ -200,7 +206,21 @@ describe('directly authored TOEFL-style bank', () => {
       .split(/(?<=[.!?])\s+/)
       .map(normalize)
       .filter((sentence) => words(sentence) >= 5))
-    expect(repeated(sentences)).toEqual([])
+    // A real notice can repeat the same procedural instruction in several
+    // different situations. Keep the small reviewed list explicit and bounded;
+    // domain content and all near-identical full stimuli remain prohibited.
+    const commonProcedures = new Set([
+      'Enter any approved change in the shared log so the next team can check what was done.',
+      'If a change is authorized, obtain a written record; a spoken agreement alone is not sufficient.',
+      'Do not assume that an unanswered request has been approved.',
+      'Resume only after receiving instructions.',
+      'Sign the checklist after completing the stated action, not merely after reading the notice.',
+      'They will document authorized exceptions so that later staff can distinguish an approved change from an error.',
+      'An earlier booking does not exempt its holder from this notice.',
+      'The next shift will use it to verify that the required action was completed.',
+    ].map(normalize))
+    const duplicated = repeated(sentences)
+    expect(duplicated.filter(([sentence, count]) => !commonProcedures.has(sentence) || count > 4)).toEqual([])
   })
 
   it('does not reuse a near-identical long stimulus under a different group', () => {

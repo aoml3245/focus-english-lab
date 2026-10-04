@@ -27,6 +27,11 @@ function isItem(value: unknown): value is BaseItem {
   if (!Number.isFinite(item.module) || !Number.isFinite(item.timeSeconds) || item.timeSeconds! <= 0 || typeof item.instruction !== 'string') return false
   if (item.options !== undefined && (!Array.isArray(item.options) || item.options.some((option) => typeof option !== 'string'))) return false
   if (typeof item.answer === 'number' && (!item.options || item.answer < 0 || item.answer >= item.options.length)) return false
+  if (item.acceptedAnswers !== undefined) {
+    if (item.kind !== 'sentence-build' || !Array.isArray(item.acceptedAnswers) || typeof item.answer !== 'string') return false
+    const tiles = (value: string) => JSON.stringify(value.split('|').map((tile) => tile.trim().toLowerCase()).sort())
+    if (item.acceptedAnswers.some((answer) => typeof answer !== 'string' || tiles(answer) !== tiles(String(item.answer)))) return false
+  }
   const hasOptionsAndIndex = Array.isArray(item.options) && item.options.length >= 2 && Number.isInteger(item.answer)
   switch (item.kind) {
     case 'complete-words': return typeof item.passage === 'string' && item.passage.length > 0 && typeof item.answer === 'string'

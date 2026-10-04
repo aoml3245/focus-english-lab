@@ -23,6 +23,8 @@ export interface BaseItem {
   audioText?: string
   options?: string[]
   answer?: string | number
+  /** Curated, grammatically valid tile orders; never an arbitrary permutation. */
+  acceptedAnswers?: string[]
   words?: string[]
   starter?: string
   timeSeconds: number
@@ -51,4 +53,7 @@ export interface SavedSession {
   reviewedItemIds?: string[]
   randomEligible?: boolean
   practiceLabel?: string
+  questionBankRevision?: string
+  itemSnapshots?: BaseItem[]
+  playedStimulusGroupIds?: string[]
 }

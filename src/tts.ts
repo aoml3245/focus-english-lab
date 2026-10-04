@@ -1,6 +1,7 @@
 import { cacheSpeech, readCachedSpeech } from './ttsAudioCache'
 import { recordTTSDiagnostic } from './ttsDiagnostics'
 import { applyQuestionRise, splitQuestionProsody, type SpeechIntonation } from './ttsProsody'
+import { ExamAudioCache } from './examAudioCache'
 
 export type VoiceProfileId = 'toefl-balanced' | 'us-female' | 'us-male' | 'uk-female' | 'uk-male' | 'system'
 
@@ -80,6 +81,7 @@ let activeUrls: string[] = []
 let playbackGeneration = 0
 const speechCache = new Map<string, Blob[]>()
 const MAX_CACHED_SPEECHES = 24
+const readyExamAudio = new ExamAudioCache()
 let examPrecacheGeneration = 0
 let activePlaybackController: AbortController | null = null
 let examPrecacheController: AbortController | null = null
@@ -274,11 +276,12 @@ export function stopTTS() {
   stopPlayback()
 }
 
-export function stopAllTTS() {
+export function stopAllTTS(keepPreparedExamAudio = false) {
   stopPlayback()
   examPrecacheGeneration += 1
   examPrecacheController?.abort()
   examPrecacheController = null
+  if (!keepPreparedExamAudio) readyExamAudio.clear()
   cancelActiveBrowserWork()
   reportExamPrecache({ status: 'idle', completed: 0, total: 0, current: 0, percent: 0, message: '' })
 }
@@ -711,6 +714,8 @@ async function synthesizeSpeech(text: string, profile: VoiceProfile, speechMode:
 
 async function getSpeech(text: string, profile: VoiceProfile, speechMode: SpeechMode, onProgress: ProgressHandler, controller: AbortController, source: 'playback' | 'precache', onChunk?: (blob: Blob, index: number) => void) {
   const key = speechKey(text, profile, speechMode)
+  const examCached = readyExamAudio.get(key)
+  if (examCached) return examCached
   const cached = speechCache.get(key)
   if (cached) {
     speechCache.delete(key)
@@ -721,6 +726,7 @@ async function getSpeech(text: string, profile: VoiceProfile, speechMode: Speech
     const persisted = await readCachedSpeech(key)
     if (persisted?.length) {
       speechCache.set(key, persisted)
+      while (speechCache.size > MAX_CACHED_SPEECHES) speechCache.delete(speechCache.keys().next().value!)
       return persisted
     }
   }
@@ -743,6 +749,7 @@ async function getSpeech(text: string, profile: VoiceProfile, speechMode: Speech
 
 export async function prepareExamTTS(audio: ExamTTSAudio[], profileId: VoiceProfileId, onProgress: ProgressHandler) {
   examPrecacheController?.abort()
+  readyExamAudio.clear()
   const controller = new AbortController()
   examPrecacheController = controller
   const result = await prepareTTS(profileId, onProgress, controller.signal)
@@ -766,11 +773,13 @@ export async function prepareExamTTS(audio: ExamTTSAudio[], profileId: VoiceProf
       const total = precacheAudio.length
       const entry = precacheAudio[index]
       reportExamPrecache({ status: 'preparing', completed: index, total, current: index + 1, percent: Math.round(index / total * 100), message: `시험 음성 ${index + 1}/${total} 변환 중` })
-      await getSpeech(entry.text, profile, entry.speechMode, (_message, detail) => {
+      const clips = await getSpeech(entry.text, profile, entry.speechMode, (_message, detail) => {
         if (generation !== examPrecacheGeneration || controller.signal.aborted) return
         const itemProgress = detail?.phase === 'generating' && detail.percent !== undefined ? detail.percent / 100 : 0
         reportExamPrecache({ status: 'preparing', completed: index, total, current: index + 1, percent: Math.min(99, Math.round((index + itemProgress) / total * 100)), message: `시험 음성 ${index + 1}/${total} 변환 중` })
       }, controller, 'precache')
+      if (generation !== examPrecacheGeneration || controller.signal.aborted) throw new DOMException('Audio preparation cancelled', 'AbortError')
+      readyExamAudio.set(speechKey(entry.text, profile, entry.speechMode), clips)
       reportExamPrecache({ status: index + 1 === total ? 'ready' : 'preparing', completed: index + 1, total, current: Math.min(index + 2, total), percent: Math.round((index + 1) / total * 100), message: index + 1 === total ? `시험 음성 ${total}개를 모두 준비했습니다.` : `시험 음성 ${index + 1}/${total} 준비 완료` })
     }
   } catch (error) {

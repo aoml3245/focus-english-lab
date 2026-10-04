@@ -134,7 +134,7 @@ const sentenceData: SentenceDatum[] = [
   ['How should the optimality model be tested?', 'Only if its currency is specified before observing behavior', ['can a deviation', 'genuinely challenge', 'the model’s', 'prediction'], 'f21-only-if-passive-inversion'],
   ['What complicated the papyrus date?', 'The regnal year being ambiguous', ['two competing', 'calendar conversions', 'remained', 'historically plausible'], 'f21-nominative-absolute-being'],
   ['Why did the aerogel panel underperform?', 'The more moisture its pores absorbed', ['the less closely', 'its conductivity resembled', 'the dry laboratory', 'value'], 'f21-double-comparative-perfect'],
-  ['What did the matching procedure accomplish?', 'Not so much did it recover the full treated population', ['as it created', 'a balanced subset', 'for which comparison', 'was defensible'], 'f21-not-so-much-inversion-as'],
+  ['What did the matching procedure accomplish?', 'It did not so much recover the full treated population', ['as create', 'a balanced subset', 'for which comparison', 'was defensible'], 'f21-not-so-much-as-parallel-verbs'],
   ['Why retain the two-sided papyrus?', 'Even if the later text is the primary document', ['the earlier writing', 'may reveal', 'how the sheet', 'was reused'], 'f21-even-if-concessive-primary'],
   ['What condition applied to the field sample?', 'Under no circumstances was the vendor to know', ['which blinded specimen', 'represented', 'the team’s', 'ordinary material'], 'f21-under-no-circumstances-inversion'],
   ['Why did the reviewers limit the claim?', 'So dependent was performance on dry conditions that', ['the laboratory result', 'could not be', 'generalized directly', 'to buildings'], 'f21-so-dependent-inversion-passive'],
