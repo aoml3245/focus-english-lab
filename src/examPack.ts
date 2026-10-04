@@ -26,6 +26,12 @@ function isItem(value: unknown): value is BaseItem {
   if (!item.section || !SECTIONS.has(item.section) || !item.kind || !KINDS.has(item.kind)) return false
   if (!Number.isFinite(item.module) || !Number.isFinite(item.timeSeconds) || item.timeSeconds! <= 0 || typeof item.instruction !== 'string') return false
   if (item.options !== undefined && (!Array.isArray(item.options) || item.options.some((option) => typeof option !== 'string'))) return false
+  for (const key of ['taskChecklist', 'commonMistakes', 'rewriteGuidance', 'targetSkills'] as const) {
+    const values = item[key]
+    if (values !== undefined && (!Array.isArray(values) || values.length > 30 || values.some((value) => typeof value !== 'string'))) return false
+  }
+  if (item.modelResponse !== undefined && typeof item.modelResponse !== 'string') return false
+  if (item.responseTimeSeconds !== undefined && (!Number.isFinite(item.responseTimeSeconds) || item.responseTimeSeconds <= 0 || item.responseTimeSeconds > 600)) return false
   if (typeof item.answer === 'number' && (!item.options || item.answer < 0 || item.answer >= item.options.length)) return false
   if (item.acceptedAnswers !== undefined) {
     if (item.kind !== 'sentence-build' || !Array.isArray(item.acceptedAnswers) || typeof item.answer !== 'string') return false

@@ -45,6 +45,7 @@ function versionManifest() {
 
 export default defineConfig({
   base: process.env.GITHUB_ACTIONS === 'true' ? '/focus-english-lab/' : '/',
+  server: { watch: process.env.CHOKIDAR_USEPOLLING === '1' ? { usePolling: true } : undefined },
   plugins: [react(), localTtsServer(), privateVocabularyServer(), versionManifest()],
   worker: { format: 'es' },
 })

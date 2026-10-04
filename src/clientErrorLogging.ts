@@ -85,6 +85,7 @@ function normalizeError(error: unknown) {
 export function captureClientError(kind: ClientErrorKind, error: unknown, context: Record<string, string | number | boolean> = {}) {
   if (typeof window === 'undefined') return false
   const normalized = normalizeError(error)
+  if (import.meta.env.DEV) console.error(`Focus English Lab ${kind}:`, normalized.message, normalized.stack)
   const fingerprint = `${kind}|${normalized.name}|${normalized.message}|${normalized.stack.slice(0, 300)}|${route()}`
   const now = Date.now()
   if (now - (recentFingerprints.get(fingerprint) || 0) < DEDUPE_MS) return false

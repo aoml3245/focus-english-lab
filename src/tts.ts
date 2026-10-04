@@ -2,6 +2,7 @@ import { cacheSpeech, readCachedSpeech } from './ttsAudioCache'
 import { recordTTSDiagnostic } from './ttsDiagnostics'
 import { applyQuestionRise, splitQuestionProsody, type SpeechIntonation } from './ttsProsody'
 import { ExamAudioCache } from './examAudioCache'
+import { compactWavBytes, encodePcm16Wav } from './pcmWav.mjs'
 
 export type VoiceProfileId = 'toefl-balanced' | 'us-female' | 'us-male' | 'uk-female' | 'uk-male' | 'system'
 
@@ -606,16 +607,14 @@ function speechKey(text: string, profile: VoiceProfile, speechMode: SpeechMode) 
   return `kokoro-q8-prosody-v5:${hasLocalTtsServer() ? 'server' : 'browser'}:${speechMode}:${profile.id}:${profile.primary || 'system'}:${profile.secondary || ''}:${text}`
 }
 
-function encodeFloatWav(samples: Float32Array, sampleRate: number) {
-  const bytes = new Uint8Array(44 + samples.byteLength)
-  const view = new DataView(bytes.buffer)
-  const write = (offset: number, value: string) => { for (let index = 0; index < value.length; index += 1) bytes[offset + index] = value.charCodeAt(index) }
-  write(0, 'RIFF'); view.setUint32(4, bytes.length - 8, true); write(8, 'WAVE'); write(12, 'fmt ')
-  view.setUint32(16, 16, true); view.setUint16(20, 3, true); view.setUint16(22, 1, true)
-  view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 4, true); view.setUint16(32, 4, true); view.setUint16(34, 32, true)
-  write(36, 'data'); view.setUint32(40, samples.byteLength, true)
-  new Float32Array(bytes.buffer, 44).set(samples)
-  return new Blob([bytes], { type: 'audio/wav' })
+async function compactSpeech(blobs: Blob[]) {
+  const compact: Blob[] = []
+  for (const blob of blobs) {
+    const original = new Uint8Array(await blob.arrayBuffer())
+    const bytes = compactWavBytes(original)
+    compact.push(bytes === original ? blob : new Blob([bytes], { type: 'audio/wav' }))
+  }
+  return compact
 }
 
 async function applyQuestionRiseToWav(blob: Blob) {
@@ -647,7 +646,7 @@ async function applyQuestionRiseToWav(blob: Blob) {
     samples = new Float32Array(count)
     for (let index = 0; index < count; index += 1) samples[index] = view.getInt16(dataOffset + index * 2, true) / 32768
   } else return blob
-  return encodeFloatWav(applyQuestionRise(samples, sampleRate), sampleRate)
+  return new Blob([encodePcm16Wav(applyQuestionRise(samples, sampleRate), sampleRate)], { type: 'audio/wav' })
 }
 
 async function mergeWavBlobs(blobs: Blob[]) {
@@ -725,15 +724,17 @@ async function getSpeech(text: string, profile: VoiceProfile, speechMode: Speech
   if (!hasLocalTtsServer()) {
     const persisted = await readCachedSpeech(key)
     if (persisted?.length) {
-      speechCache.set(key, persisted)
+      const compact = await compactSpeech(persisted)
+      speechCache.set(key, compact)
       while (speechCache.size > MAX_CACHED_SPEECHES) speechCache.delete(speechCache.keys().next().value!)
-      return persisted
+      return compact
     }
   }
   const pending = pendingSpeech.get(key)
   if (pending) return pending
   if (source === 'playback') pendingPlaybackRequests.add(controller)
-  const synthesis = synthesizeSpeech(text, profile, speechMode, onProgress, controller.signal, onChunk).then(async (blobs) => {
+  const synthesis = synthesizeSpeech(text, profile, speechMode, onProgress, controller.signal, onChunk).then(async (generated) => {
+      const blobs = await compactSpeech(generated)
       if (controller.signal.aborted) throw new DOMException('Audio request cancelled', 'AbortError')
       speechCache.set(key, blobs)
       while (speechCache.size > MAX_CACHED_SPEECHES) speechCache.delete(speechCache.keys().next().value!)

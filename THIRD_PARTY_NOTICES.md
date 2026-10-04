@@ -59,4 +59,6 @@ Model weights and Ollama caches are local-only and are not committed or redistri
 
 ## JavaScript packages
 
+Release 0.1.85 uses the browser's built-in MediaRecorder and IndexedDB for personal speaking recordings without adding model weights or a new speech-recognition package. Optional browser SpeechRecognition may be serviced remotely by the browser vendor; it is opt-in and disabled during mock exams. Text comparison and local-model feedback are not phonetic or official ETS scoring. The 430 new original reading/writing/speaking tasks, their explanations and model responses are independently authored MIT-licensed material. Existing lexical-source attribution and CC BY-SA data terms are unchanged.
+
 React, React DOM, Vite, Vitest, ONNX Runtime Web and `coi-serviceworker` are MIT-licensed. `kokoro-js`, `phonemizer` and the Transformers runtime are Apache-2.0 licensed. Exact package versions and transitive dependencies are recorded in `package-lock.json`; installed package contents retain their own licenses and are not checked into this repository.

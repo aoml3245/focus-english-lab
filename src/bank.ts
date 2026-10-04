@@ -31,6 +31,8 @@ import { AUTHORED_SUPPLEMENT_ITEMS } from './authoredSupplementBank'
 import { prepareSentenceTiles } from './sentenceTiles'
 import { withSentenceAlternatives } from './sentenceAlternatives'
 import { withCtestFormat } from './clozeFormat'
+import { fullAcademicReading } from './fullAcademicReading'
+import { coachedTaskBank } from './coachedTaskBank'
 import { buildFullBlueprint, buildReadingBlueprint, buildSectionBlueprint, prepareQuestionBank } from './examBlueprint'
 
 type Difficulty = NonNullable<BaseItem['difficulty']>
@@ -150,10 +152,10 @@ const speaking: BaseItem[] = [
   ...INTERVIEWS.flatMap(([topic, difficulty, questions], i) => questions.map((audioText, j) => ({ ...make(`s-interview-${i}-${j}`, 'speaking', 'interview', 'Take an Interview', topic, difficulty, 45), instruction: '면접 질문에 충분히 답하세요. 준비 시간은 없습니다.', audioText }))),
 ]
 
-export const QUESTION_BANK: BaseItem[] = prepareQuestionBank([...reading, ...listening, ...writing, ...speaking, ...AUTHORED_CONTEXT_ITEMS, ...AUTHORED_READING_SUPPLEMENT_ITEMS, ...AUTHORED_SUPPLEMENT_ITEMS, ...AUTHORED_BATCH_TWO_ITEMS, ...AUTHORED_FORM_03_ITEMS, ...AUTHORED_FORM_04_ITEMS, ...AUTHORED_FORM_05_ITEMS, ...AUTHORED_FORM_06_ITEMS, ...AUTHORED_FORM_07_ITEMS, ...AUTHORED_FORM_08_ITEMS, ...AUTHORED_FORM_09_ITEMS, ...AUTHORED_FORM_10_ITEMS, ...AUTHORED_FORM_11_ITEMS, ...AUTHORED_FORM_12_ITEMS, ...AUTHORED_FORM_13_ITEMS, ...AUTHORED_FORM_14_ITEMS, ...AUTHORED_FORM_15_ITEMS, ...AUTHORED_FORM_16_ITEMS, ...AUTHORED_FORM_17_ITEMS, ...AUTHORED_FORM_18_ITEMS, ...AUTHORED_FORM_19_ITEMS, ...AUTHORED_FORM_20_ITEMS, ...AUTHORED_FORM_21_ITEMS, ...AUTHORED_FORM_22_ITEMS, ...AUTHORED_FORM_23_ITEMS, ...AUTHORED_FORM_24_ITEMS, ...AUTHORED_FORM_25_ITEMS, ...AUTHORED_FORM_26_ITEMS, ...AUTHORED_FORM_27_ITEMS, ...AUTHORED_FORM_28_ITEMS, ...AUTHORED_FORM_29_ITEMS, ...AUTHORED_FORM_30_ITEMS], { contextualizeDuplicatePrompts: false }).map(withSentenceAlternatives).map(withCtestFormat)
+export const QUESTION_BANK: BaseItem[] = prepareQuestionBank([...reading, ...listening, ...writing, ...speaking, ...AUTHORED_CONTEXT_ITEMS, ...AUTHORED_READING_SUPPLEMENT_ITEMS, ...AUTHORED_SUPPLEMENT_ITEMS, ...AUTHORED_BATCH_TWO_ITEMS, ...AUTHORED_FORM_03_ITEMS, ...AUTHORED_FORM_04_ITEMS, ...AUTHORED_FORM_05_ITEMS, ...AUTHORED_FORM_06_ITEMS, ...AUTHORED_FORM_07_ITEMS, ...AUTHORED_FORM_08_ITEMS, ...AUTHORED_FORM_09_ITEMS, ...AUTHORED_FORM_10_ITEMS, ...AUTHORED_FORM_11_ITEMS, ...AUTHORED_FORM_12_ITEMS, ...AUTHORED_FORM_13_ITEMS, ...AUTHORED_FORM_14_ITEMS, ...AUTHORED_FORM_15_ITEMS, ...AUTHORED_FORM_16_ITEMS, ...AUTHORED_FORM_17_ITEMS, ...AUTHORED_FORM_18_ITEMS, ...AUTHORED_FORM_19_ITEMS, ...AUTHORED_FORM_20_ITEMS, ...AUTHORED_FORM_21_ITEMS, ...AUTHORED_FORM_22_ITEMS, ...AUTHORED_FORM_23_ITEMS, ...AUTHORED_FORM_24_ITEMS, ...AUTHORED_FORM_25_ITEMS, ...AUTHORED_FORM_26_ITEMS, ...AUTHORED_FORM_27_ITEMS, ...AUTHORED_FORM_28_ITEMS, ...AUTHORED_FORM_29_ITEMS, ...AUTHORED_FORM_30_ITEMS], { contextualizeDuplicatePrompts: false }).concat(fullAcademicReading, coachedTaskBank).map(withSentenceAlternatives).map(withCtestFormat)
 export const CONTEXT_TOPIC_COUNT = new Set(QUESTION_BANK.map((item) => item.topic).filter(Boolean)).size
 const validateQuestionBank = () => {
-  if (QUESTION_BANK.length !== 2922) throw new Error(`Expected 2922 directly authored questions, received ${QUESTION_BANK.length}.`)
+  if (QUESTION_BANK.length !== 3352) throw new Error(`Expected 3352 directly authored questions, received ${QUESTION_BANK.length}.`)
   const ids = new Set(QUESTION_BANK.map((item) => item.id))
   if (ids.size !== QUESTION_BANK.length) throw new Error('Question IDs must be unique.')
   QUESTION_BANK.forEach((item) => {

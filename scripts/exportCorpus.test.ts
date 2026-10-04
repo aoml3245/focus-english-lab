@@ -14,7 +14,7 @@ describe('vocabulary corpus export', () => {
       texts: [item.passage, item.audioText, item.prompt, item.instruction, item.explanation, item.starter, ...(item.options || []), ...(item.words || [])].filter(Boolean),
     }))
     writeFileSync(destination, JSON.stringify(corpus, null, 2))
-    expect(corpus).toHaveLength(2922)
+    expect(corpus).toHaveLength(3352)
     expect(QUESTION_BANK.every((item) => item.sourceFamily?.startsWith('authored-'))).toBe(true)
 
     const exportedText = corpus.flatMap((item) => item.texts).join(' ').toLowerCase()

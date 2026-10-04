@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { AudioPrompt, ArrowIcon, Brand, HOME_NAVIGATION_EVENT, Recorder, Timer } from './components'
+import { AudioPrompt, ArrowIcon, Brand, HOME_NAVIGATION_EVENT, Timer } from './components'
 import { CONTEXT_TOPIC_COUNT, countReadingScoredItems, SECTION_META } from './data'
 import { buildFullPracticeSetFrom, buildSectionPracticeFrom, buildTaskPracticeFrom, countBySectionFrom, getActiveExamPackInfo, getActivePracticeItems, getAvailablePracticeItems, getPracticeTaskTypesFrom } from './examPack'
 import { displayAnswer, getSessionStats, isCorrect, scoreItem } from './review'
@@ -12,6 +12,12 @@ import { finishSession, loadActive, loadExcludedItemIds, loadHistory, saveActive
 import { examSpeechMode, getVoiceProfile, hasLocalTtsServer, prepareExamTTS, stopAllTTS, stopTTS, subscribeExamTTSPrecache, type TTSProgressDetail } from './tts'
 import type { Answer, BaseItem, PracticeMode, SavedSession, Section } from './types'
 import { CLOUD_SYNC_CONFIGURED } from './cloudSync'
+import { attachAdaptivePlan, adaptivePreparationItems, advanceAdaptiveSession } from './adaptiveExam'
+import { recordExamReview } from './examReviewLearning'
+import ExamReviewWorkshop, { ReviewCausePanel } from './ExamReviewWorkshop'
+import WritingWorkshop, { preserveWritingEditor } from './WritingWorkshop'
+import SpeakingPractice from './SpeakingPractice'
+import { SectionPerformance } from './SectionPerformance'
 
 const Vocabulary = lazy(() => import('./Vocabulary'))
 const StudyGames = lazy(() => import('./StudyGames'))
@@ -21,7 +27,7 @@ const ReadingAssistant = lazy(() => import('./ReadingAssistant'))
 const WritingCoach = lazy(() => import('./WritingCoach'))
 const History = lazy(() => import('./History'))
 const ExamData = lazy(() => import('./ExamData'))
-type Screen = 'home' | 'section-select' | 'task-select' | 'intro' | 'test' | 'result' | 'vocabulary' | 'study-games' | 'settings' | 'voice-settings' | 'history' | 'exam-data'
+type Screen = 'home' | 'section-select' | 'task-select' | 'intro' | 'test' | 'result' | 'vocabulary' | 'study-games' | 'settings' | 'voice-settings' | 'history' | 'exam-data' | 'exam-review'
 type AppNavigationState = { focusEnglishLab: true; screen: Screen; historySessionId?: string | null; resultId?: string | null; practiceSection?: Section | null }
 const PRACTICE_ITEMS = getActivePracticeItems()
 const ACTIVE_PACK = getActiveExamPackInfo()
@@ -44,7 +50,7 @@ const newSession = (items: BaseItem[], mode: PracticeMode, practiceLabel?: strin
 function isAppNavigationState(value: unknown): value is AppNavigationState {
   if (!value || typeof value !== 'object') return false
   const state = value as Partial<AppNavigationState>
-  return state.focusEnglishLab === true && typeof state.screen === 'string' && ['home', 'section-select', 'task-select', 'intro', 'test', 'result', 'vocabulary', 'study-games', 'settings', 'voice-settings', 'history', 'exam-data'].includes(state.screen)
+  return state.focusEnglishLab === true && typeof state.screen === 'string' && ['home', 'section-select', 'task-select', 'intro', 'test', 'result', 'vocabulary', 'study-games', 'settings', 'voice-settings', 'history', 'exam-data', 'exam-review'].includes(state.screen)
 }
 
 function itemsForSession(entry: SavedSession | null) {
@@ -137,7 +143,7 @@ function App() {
 
   useEffect(() => {
     const stopAllAudio = () => { preparedSessionId.current = null; stopAllTTS() }
-    const stopWhenHidden = () => { if (document.visibilityState === 'hidden') stopAllAudio() }
+    const stopWhenHidden = () => { if (document.visibilityState === 'hidden') stopAllTTS(true) }
     window.addEventListener('pagehide', stopAllAudio)
     window.addEventListener('beforeunload', stopAllAudio)
     document.addEventListener('visibilitychange', stopWhenHidden)
@@ -152,7 +158,12 @@ function App() {
   const begin = (selected: BaseItem[], mode: PracticeMode, practiceLabel?: string) => {
     if (!selected.length) { setPoolMessage('랜덤 후보 문항이 없습니다. 학습 기록에서 이전 문항을 다시 랜덤 후보에 포함해 주세요.'); navigate('home'); return }
     setPoolMessage('')
-    const next = newSession(selected, mode, practiceLabel); setItems(selected); setSession(next); saveActive(next); navigate('intro')
+    let next = newSession(selected, mode, practiceLabel)
+    if (mode === 'mock') {
+      try { next = attachAdaptivePlan(next, selected, PRACTICE_ITEMS, loadExcludedItemIds()) }
+      catch { /* Imported/limited banks remain explicitly fixed rather than fabricating a branch. */ }
+    }
+    setItems(itemsForSession(next)); setSession(next); saveActive(next); navigate('intro')
   }
   const resume = () => {
     if (!session) return
@@ -167,8 +178,10 @@ function App() {
       saveActive(next); return next
     })
   }
+  const changeSession = (next: SavedSession) => { setSession(next); setItems(itemsForSession(next)) }
   const finish = () => {
     if (!session) return
+    recordExamReview(session, items)
     const completed = finishSession(session); setResult(completed); setSession(null); navigate('result', { replace: true, resultId: completed.id })
   }
 
@@ -179,27 +192,28 @@ function App() {
   }
   const openHistory = (sessionId: string | null = null) => navigate('history', { historySessionId: sessionId })
 
-  if (screen === 'home') return <Home session={session} poolMessage={poolMessage} onStudy={() => begin(buildFullPracticeSetFrom(PRACTICE_ITEMS, loadExcludedItemIds()), 'study')} onMock={() => begin(buildFullPracticeSetFrom(PRACTICE_ITEMS, loadExcludedItemIds()), 'mock')} onResume={resume} onSections={() => navigate('section-select')} onVocabulary={() => navigate('vocabulary')} onStudyGames={() => navigate('study-games')} onSettings={() => navigate('settings')} onHistory={openHistory} />
+  if (screen === 'home') return <Home session={session} poolMessage={poolMessage} onStudy={() => begin(buildFullPracticeSetFrom(PRACTICE_ITEMS, loadExcludedItemIds()), 'study')} onMock={() => begin(buildFullPracticeSetFrom(PRACTICE_ITEMS, loadExcludedItemIds()), 'mock')} onResume={resume} onSections={() => navigate('section-select')} onVocabulary={() => navigate('vocabulary')} onStudyGames={() => navigate('study-games')} onSettings={() => navigate('settings')} onHistory={openHistory} onReview={() => navigate('exam-review')} />
   if (screen === 'vocabulary') return <Suspense fallback={<div className="route-loading">단어장을 불러오는 중입니다…</div>}><Vocabulary onBack={goBack} /></Suspense>
   if (screen === 'study-games') return <Suspense fallback={<div className="route-loading">학습 게임을 준비하는 중입니다…</div>}><StudyGames onBack={goBack} /></Suspense>
   if (screen === 'settings') return <Suspense fallback={<div className="route-loading">설정을 불러오는 중입니다…</div>}><Settings onBack={goBack} onVoiceSettings={() => navigate('voice-settings')} onExamData={() => navigate('exam-data')} /></Suspense>
   if (screen === 'voice-settings') return <Suspense fallback={<div className="route-loading">음성 설정을 불러오는 중입니다…</div>}><VoiceSettings onBack={goBack} /></Suspense>
   if (screen === 'exam-data') return <Suspense fallback={<div className="route-loading">시험 데이터를 불러오는 중입니다…</div>}><ExamData onBack={goBack} onActivate={() => { window.history.replaceState({ focusEnglishLab: true, screen: 'home' } satisfies AppNavigationState, '', routeUrl('home')); window.location.reload() }} /></Suspense>
   if (screen === 'history') return <Suspense fallback={<div className="route-loading">학습 기록을 불러오는 중입니다…</div>}><History initialSessionId={historySessionId} onBack={goBack} /></Suspense>
+  if (screen === 'exam-review') return <ExamReviewWorkshop bank={PRACTICE_ITEMS} onBack={goBack} onBegin={(selected, source) => { begin(selected, 'section', source === 'exact' ? '같은 문제 오답 복습' : '새 유사 문제 복습') }} />
   if (screen === 'section-select') return <SectionSelect onBack={goBack} onSelect={(section) => navigate('task-select', { practiceSection: section })} />
   if (screen === 'task-select') return practiceSection ? <TaskSelect section={practiceSection} onBack={goBack} onSelectAll={() => begin(buildSectionPracticeFrom(PRACTICE_ITEMS, practiceSection, loadExcludedItemIds()), 'section', `${SECTION_META[practiceSection].label} 전체 유형`)} onSelectTask={(taskTitle, taskLabel) => begin(buildTaskPracticeFrom(PRACTICE_ITEMS, practiceSection, taskTitle, loadExcludedItemIds()), 'section', `${SECTION_META[practiceSection].label} · ${taskLabel}`)} /> : <SectionSelect onBack={goBack} onSelect={(section) => navigate('task-select', { practiceSection: section })} />
-  if (screen === 'intro') return <Intro items={items} mode={session?.mode || 'mock'} practiceLabel={session?.practiceLabel} onBack={goBack} onStart={() => { preparedSessionId.current = session?.id || null; navigate('test') }} />
-  if (screen === 'test' && session) return <Test items={items} session={session} setSession={setSession} onAnswer={updateAnswer} onFinish={finish} />
+  if (screen === 'intro') return <Intro items={items} preparationItems={session ? adaptivePreparationItems(session, items) : items} adaptive={Boolean(session?.adaptive)} mode={session?.mode || 'mock'} practiceLabel={session?.practiceLabel} onBack={goBack} onStart={() => { preparedSessionId.current = session?.id || null; navigate('test') }} />
+  if (screen === 'test' && session) return <Test items={items} session={session} setSession={changeSession} onAnswer={updateAnswer} onFinish={finish} />
   if (screen === 'result' && result) return <Result items={items} session={result} onHome={() => navigate('home')} onRetry={() => begin(items, result.mode || 'mock', result.practiceLabel)} onRandomEligibilityChange={updateResultEligibility} />
   return null
 }
 
-function Home({ session, poolMessage, onStudy, onMock, onResume, onSections, onVocabulary, onStudyGames, onSettings, onHistory }: { session: SavedSession | null; poolMessage: string; onStudy: () => void; onMock: () => void; onResume: () => void; onSections: () => void; onVocabulary: () => void; onStudyGames: () => void; onSettings: () => void; onHistory: (sessionId?: string | null) => void }) {
+function Home({ session, poolMessage, onStudy, onMock, onResume, onSections, onVocabulary, onStudyGames, onSettings, onHistory, onReview }: { session: SavedSession | null; poolMessage: string; onStudy: () => void; onMock: () => void; onResume: () => void; onSections: () => void; onVocabulary: () => void; onStudyGames: () => void; onSettings: () => void; onHistory: (sessionId?: string | null) => void; onReview: () => void }) {
   const history = loadHistory()
   return <div className="app-shell">
-    <aside className="sidebar"><Brand /><nav><button className="nav-item nav-item--active">홈</button><button className="nav-item" onClick={onMock}>모의시험</button><button className="nav-item" onClick={onSections}>섹션 연습</button><button className="nav-item" onClick={onVocabulary}>단어장</button><button className="nav-item" onClick={onStudyGames}>단어·문장 게임</button><button className="nav-item" onClick={onSettings}>설정</button><button className="nav-item" onClick={() => onHistory()}>학습 기록</button></nav><div className="sidebar-note"><strong>안내</strong><p>모든 점수는 연습용 추정치이며 ETS 공식 점수가 아닙니다. {CLOUD_SYNC_CONFIGURED ? '개인 기록은 로그인하면 계정에 동기화됩니다.' : '기록은 이 기기에만 저장됩니다.'}</p></div></aside>
+    <aside className="sidebar"><Brand /><nav><button className="nav-item nav-item--active">홈</button><button className="nav-item" onClick={onMock}>모의시험</button><button className="nav-item" onClick={onSections}>섹션 연습</button><button className="nav-item" onClick={onVocabulary}>단어장</button><button className="nav-item" onClick={onStudyGames}>단어·문장 게임</button><button className="nav-item" onClick={onSettings}>설정</button><button className="nav-item" onClick={() => onHistory()}>학습 기록</button><button className="nav-item" onClick={onReview}>오답 재학습</button></nav><div className="sidebar-note"><strong>안내</strong><p>정답률과 작성형 수행 결과는 학습 지표이며 ETS 공식 점수가 아닙니다. 개인 녹음은 이 기기에만 저장됩니다. {CLOUD_SYNC_CONFIGURED ? '개인 기록은 로그인하면 계정에 동기화됩니다.' : '기록은 이 기기에만 저장됩니다.'}</p></div></aside>
     <header className="mobile-home-header"><Brand /><button className="text-button" onClick={() => onHistory()}>학습 기록 <ArrowIcon /></button></header>
-    <main className="dashboard"><div className="dashboard-top"><div><h1>실전처럼, 매일 새 세트.</h1><p>{BANK_SIZE}개의 독창적인 문제은행에서 한 주제를 여러 맥락과 관점으로 연습합니다.</p>{ACTIVE_PACK.source === 'imported' && <p className="active-pack-badge">가져온 문제은행 · {ACTIVE_PACK.title}</p>}<div className="actions"><button className="button button--primary button--large" onClick={onStudy}>랜덤 전체 세트 시작 <ArrowIcon /></button><button className="button button--secondary button--large" onClick={onMock}>실전 모의시험</button><button className="button button--secondary button--large" onClick={onSections}>섹션 연습</button><button className="button button--secondary button--large" onClick={onVocabulary}>단어장</button><button className="button button--secondary button--large" onClick={onStudyGames}>단어·문장 게임</button><button className="button button--secondary button--large" onClick={onSettings}>설정</button></div><div className="mode-difference"><div><strong>⚡ 랜덤 전체 세트</strong><span>한 문제씩 풀고 즉시 정답과 해설을 확인합니다.</span></div><div><strong>🧠 단어·문장 게임</strong><span>뜻·동의어·해석·영작을 바로 확인하고 선택적으로 AI 평가를 받습니다.</span></div></div></div><div className="mode-summary"><strong>연습 구성</strong><dl><dt>문제은행</dt><dd>{BANK_SIZE}문항</dd><dt>맥락 주제</dt><dd>{CONTEXT_TOPIC_COUNT}개 묶음</dd><dt>순서</dt><dd>R → L → W → S</dd><dt>저장</dt><dd>{CLOUD_SYNC_CONFIGURED ? '로그인 시 계정 동기화' : '로컬 자동 저장'}</dd></dl></div></div>
+    <main className="dashboard"><div className="dashboard-top"><div><h1>실전처럼, 매일 새 세트.</h1><p>{BANK_SIZE}개의 독창적인 문제은행에서 한 주제를 여러 맥락과 관점으로 연습합니다.</p>{ACTIVE_PACK.source === 'imported' && <p className="active-pack-badge">가져온 문제은행 · {ACTIVE_PACK.title}</p>}<div className="actions"><button className="button button--primary button--large" onClick={onStudy}>랜덤 전체 세트 시작 <ArrowIcon /></button><button className="button button--secondary button--large" onClick={onMock}>실전 모의시험</button><button className="button button--secondary button--large" onClick={onSections}>섹션 연습</button><button className="button button--secondary button--large" onClick={onVocabulary}>단어장</button><button className="button button--secondary button--large" onClick={onStudyGames}>단어·문장 게임</button><button className="button button--secondary button--large" onClick={onReview}>오답 재학습</button><button className="button button--secondary button--large" onClick={onSettings}>설정</button></div><div className="mode-difference"><div><strong>⚡ 랜덤 전체 세트</strong><span>한 문제씩 풀고 즉시 정답과 해설을 확인합니다.</span></div><div><strong>🧠 단어·문장 게임</strong><span>뜻·동의어·해석·영작을 바로 확인하고 선택적으로 AI 평가를 받습니다.</span></div></div></div><div className="mode-summary"><strong>연습 구성</strong><dl><dt>문제은행</dt><dd>{BANK_SIZE}문항</dd><dt>맥락 주제</dt><dd>{CONTEXT_TOPIC_COUNT}개 묶음</dd><dt>순서</dt><dd>R → L → W → S</dd><dt>저장</dt><dd>{CLOUD_SYNC_CONFIGURED ? '로그인 시 계정 동기화' : '로컬 자동 저장'}</dd></dl></div></div>
       {session && <button className="resume-bar" onClick={onResume}><span><strong>진행 중인 세트가 있습니다</strong><small>{session.itemIndex + 1}번 문항부터 계속할 수 있습니다.</small></span><span>이어하기 <ArrowIcon /></span></button>}
       {poolMessage && <p className="notice notice--error">{poolMessage}</p>}
       <section><div className="section-heading"><h2>시험 순서 및 구성</h2><p>현재 시험은 아래 순서로 진행되며 예정된 휴식은 없습니다.</p></div><div className="sequence">{(Object.keys(SECTION_META) as Section[]).map((key, index) => <div className="sequence-step" key={key}><div><span className="step-number">{index + 1}</span><strong>{SECTION_META[key].label}</strong><em>{SECTION_META[key].minutes}분</em></div><p>{SECTION_META[key].tasks}</p></div>)}</div></section>
@@ -219,7 +233,7 @@ function TaskSelect({ section, onBack, onSelectAll, onSelectTask }: { section: S
   return <div className="simple-page"><header><Brand /><button className="text-button" onClick={onBack}><ArrowIcon direction="left" /> 섹션으로</button></header><main className="select-main task-select-main"><span className="section-label">{SECTION_META[section].label}</span><h1>연습할 유형을 고르세요.</h1><p>한 유형만 반복하거나, 기존처럼 {SECTION_META[section].label}의 여러 유형을 섞어서 연습할 수 있습니다.</p><button className="task-all" onClick={onSelectAll}><span><strong>전체 유형 섞기</strong><small>{SECTION_META[section].tasks}</small></span><em>랜덤 후보 {countBySectionFrom(PRACTICE_ITEMS, section, excludedIds)}문항</em><ArrowIcon /></button><div className="task-list">{tasks.map((task, index) => <button key={task.title} onClick={() => onSelectTask(task.title, task.label)}><span className="step-number">{String(index + 1).padStart(2, '0')}</span><span><strong>{task.label}</strong><small>{task.description}</small></span><em>후보 {task.candidateCount} · 한 세트 {task.setSize}</em><ArrowIcon /></button>)}</div></main></div>
 }
 
-function Intro({ items, mode, practiceLabel, onBack, onStart: navigateToTest }: { items: BaseItem[]; mode: PracticeMode; practiceLabel?: string; onBack: () => void; onStart: () => void }) {
+function Intro({ items, preparationItems, adaptive = false, mode, practiceLabel, onBack, onStart: navigateToTest }: { items: BaseItem[]; preparationItems: BaseItem[]; adaptive?: boolean; mode: PracticeMode; practiceLabel?: string; onBack: () => void; onStart: () => void }) {
   const first = items[0]
   const isFull = new Set(items.map((item) => item.section)).size > 1
   const isMock = mode === 'mock'
@@ -236,10 +250,15 @@ function Intro({ items, mode, practiceLabel, onBack, onStart: navigateToTest }: 
   const localTts = hasAudio ? hasLocalTtsServer() : false
   const profile = hasAudio ? getVoiceProfile() : null
   const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    const retryOnReturn = () => { if (document.visibilityState === 'visible') setAttempt((value) => value + 1) }
+    document.addEventListener('visibilitychange', retryOnReturn)
+    return () => document.removeEventListener('visibilitychange', retryOnReturn)
+  }, [])
   const [preparation, setPreparation] = useState<{ phase: 'preparing' | 'ready' | 'system' | 'error'; message: string; progress?: TTSProgressDetail }>(() => requiresAudioPreflight
     ? { phase: 'preparing', message: '모의시험에 필요한 음성 준비를 시작합니다…' }
     : { phase: 'ready', message: '음성이 필요한 문항에서 변환 완료 후 재생 버튼이 활성화됩니다.' })
-  const examAudio = items.flatMap((item) => item.audioText && (item.section === 'listening' || item.section === 'speaking')
+  const examAudio = preparationItems.flatMap((item) => item.audioText && (item.section === 'listening' || item.section === 'speaking')
     ? [{ text: item.audioText, speechMode: examSpeechMode(item.section, item.title) }]
     : [])
   useEffect(() => {
@@ -271,7 +290,7 @@ function Intro({ items, mode, practiceLabel, onBack, onStart: navigateToTest }: 
   const preparing = preparation.phase === 'preparing'
   const ready = preparation.phase === 'ready' || preparation.phase === 'system'
   const modeTitle = practiceLabel || (mode === 'study' ? '즉시 피드백 랜덤 세트' : mode === 'mock' ? '실전 모의시험' : `${SECTION_META[first.section].label} 집중 연습`)
-  return <div className="intro-screen"><header><Brand /><span>System check</span></header><main><div className="intro-copy"><span className="section-label">{isFull ? 'R · L · W · S' : SECTION_META[first.section].label}</span><h1>{modeTitle}</h1><p>전체 {BANK_SIZE}개 문제은행에서 새 세트를 구성했습니다. 선택 범위는 {selectionLabel}입니다. Complete the Words 한 화면은 10개 빈칸을 채점합니다.</p><ul>{immediateFeedback ? <><li>제출 직후 원래 문제 화면에서 내 답을 맞음·틀림 색으로 표시하고, 틀린 답 바로 아래에 정답을 보여줍니다.</li><li>정답 표시는 언제든 숨기거나 다시 볼 수 있으며, 확인하는 동안 타이머가 멈춥니다.</li></> : <><li>정답과 해설은 전체 시험을 마친 뒤에 공개됩니다.</li><li>모의시험에서는 AI 글쓰기 코칭과 답안 수정 기능이 비활성화됩니다.</li><li>이 앱은 자체 제작 고정형 연습 시험입니다. 공식 적응형 출제·점수 산정은 재현하지 않으며 학술 읽기는 짧은 지문 연습형입니다.</li></>}{hasAudio && <li>{isMock ? `Listening·Speaking 음성은 ${localTts ? '로컬 서버' : '이 웹브라우저'}에서 백그라운드로 준비되며, 모든 시험 음성의 준비가 끝나야 시작할 수 있습니다.` : '음성이 필요한 문항에서는 변환이 끝난 뒤 사용자가 재생 버튼을 눌러 시작합니다.'}</li>}{hasListening && <li>Listening에서는 한 음원을 한 번 재생하고 같은 묶음의 문제를 이어서 풉니다.</li>}{hasSpeaking && <li>Speaking 녹음을 위해 마이크 권한이 필요합니다.</li>}</ul></div><div className="system-panel"><h2>시작 전 확인</h2><div><span>학습 방식</span><strong>{immediateFeedback ? '문항별 즉시 채점' : '종료 후 채점'}</strong></div><div><span>선택 문항</span><strong>{selectionLabel}</strong></div>{hasAudio && profile && <div><span>재생 음성</span><strong>{profile.shortLabel}</strong></div>}{hasSpeaking && <div><span>마이크</span><strong>Speaking에서 요청</strong></div>}{hasAudio && <div className={`preflight-status preflight-status--${preparation.phase}`} role="status" aria-live="polite"><span className={preparing ? 'audio-pulse audio-pulse--active' : 'audio-pulse'} /><span><strong>{preparing ? '시험 음성 준비 중' : preparation.phase === 'ready' ? isMock ? '모의시험 음성 준비 완료' : '문항별 음성 준비' : preparation.phase === 'system' ? '기기 음성 준비 완료' : '음성 준비 실패'}</strong><small>{preparation.message}</small>{preparing && preparation.progress?.percent !== undefined && <span className="preflight-progress" role="progressbar" aria-label="모의시험 전체 음성 준비 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={preparation.progress.percent}><span style={{ width: `${preparation.progress.percent}%` }} /></span>}{preparing && preparation.progress?.loadedBytes !== undefined && preparation.progress.totalBytes !== undefined && <small>{(preparation.progress.loadedBytes / 1024 / 1024).toFixed(1)} / {(preparation.progress.totalBytes / 1024 / 1024).toFixed(1)} MB{preparation.progress.file ? ` · ${preparation.progress.file}` : ''}</small>}</span></div>}{hasAudio && preparation.phase === 'error' && <button className="button button--secondary preflight-test" onClick={() => setAttempt((value) => value + 1)}>음성 준비 다시 시도</button>}<button className="button button--primary button--large" disabled={requiresAudioPreflight && !ready} onClick={navigateToTest}>{isMock ? '모의시험 시작' : '연습 시작'} <ArrowIcon /></button><button className="text-button" onClick={onBack}>나중에 하기</button></div></main></div>
+  return <div className="intro-screen"><header><Brand /><span>System check</span></header><main><div className="intro-copy"><span className="section-label">{isFull ? 'R · L · W · S' : SECTION_META[first.section].label}</span><h1>{modeTitle}</h1><p>전체 {BANK_SIZE}개 문제은행에서 새 세트를 구성했습니다. 선택 범위는 {selectionLabel}입니다. Complete the Words 한 화면은 10개 빈칸을 채점합니다.</p><ul>{immediateFeedback ? <><li>제출 직후 원래 문제 화면에서 내 답을 맞음·틀림 색으로 표시하고, 틀린 답 바로 아래에 정답을 보여줍니다.</li><li>정답 표시는 언제든 숨기거나 다시 볼 수 있으며, 확인하는 동안 타이머가 멈춥니다.</li></> : <><li>정답과 해설은 전체 시험을 마친 뒤에 공개됩니다.</li><li>모의시험에서는 AI 글쓰기 코칭과 답안 수정 기능이 비활성화됩니다.</li><li>{adaptive ? '첫 모듈 정답률 70%를 기준으로 Reading·Listening 다음 난이도를 선택하는 자체 적응형 연습입니다.' : '이 문제은행/범위는 고정형 연습입니다.'} 공식 분기·점수 산정은 재현하지 않습니다. 기본 모의시험은 완결된 학술 읽기 지문을 우선 사용합니다.</li></>}{hasAudio && <li>{isMock ? `Listening·Speaking 음성은 ${localTts ? '로컬 서버' : '이 웹브라우저'}에서 백그라운드로 준비되며, 모든 시험 음성의 준비가 끝나야 시작할 수 있습니다.` : '음성이 필요한 문항에서는 변환이 끝난 뒤 사용자가 재생 버튼을 눌러 시작합니다.'}</li>}{hasListening && <li>Listening에서는 한 음원을 한 번 재생하고 같은 묶음의 문제를 이어서 풉니다.</li>}{hasSpeaking && <li>Speaking 녹음을 위해 마이크 권한이 필요합니다.</li>}</ul></div><div className="system-panel"><h2>시작 전 확인</h2><div><span>학습 방식</span><strong>{immediateFeedback ? '문항별 즉시 채점' : '종료 후 채점'}</strong></div><div><span>선택 문항</span><strong>{selectionLabel}</strong></div>{hasAudio && profile && <div><span>재생 음성</span><strong>{profile.shortLabel}</strong></div>}{hasSpeaking && <div><span>마이크</span><strong>Speaking에서 요청</strong></div>}{hasAudio && <div className={`preflight-status preflight-status--${preparation.phase}`} role="status" aria-live="polite"><span className={preparing ? 'audio-pulse audio-pulse--active' : 'audio-pulse'} /><span><strong>{preparing ? '시험 음성 준비 중' : preparation.phase === 'ready' ? isMock ? '모의시험 음성 준비 완료' : '문항별 음성 준비' : preparation.phase === 'system' ? '기기 음성 준비 완료' : '음성 준비 실패'}</strong><small>{preparation.message}</small>{preparing && preparation.progress?.percent !== undefined && <span className="preflight-progress" role="progressbar" aria-label="모의시험 전체 음성 준비 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={preparation.progress.percent}><span style={{ width: `${preparation.progress.percent}%` }} /></span>}{preparing && preparation.progress?.loadedBytes !== undefined && preparation.progress.totalBytes !== undefined && <small>{(preparation.progress.loadedBytes / 1024 / 1024).toFixed(1)} / {(preparation.progress.totalBytes / 1024 / 1024).toFixed(1)} MB{preparation.progress.file ? ` · ${preparation.progress.file}` : ''}</small>}</span></div>}{hasAudio && preparation.phase === 'error' && <button className="button button--secondary preflight-test" onClick={() => setAttempt((value) => value + 1)}>음성 준비 다시 시도</button>}<button className="button button--primary button--large" disabled={requiresAudioPreflight && !ready} onClick={navigateToTest}>{isMock ? '모의시험 시작' : '연습 시작'} <ArrowIcon /></button><button className="text-button" onClick={onBack}>나중에 하기</button></div></main></div>
 }
 
 function Test({ items, session, setSession, onAnswer, onFinish }: { items: BaseItem[]; session: SavedSession; setSession: (s: SavedSession) => void; onAnswer: (id: string, answer: Answer) => void; onFinish: () => void }) {
@@ -283,6 +302,8 @@ function Test({ items, session, setSession, onAnswer, onFinish }: { items: BaseI
   const [feedbackVisible, setFeedbackVisible] = useState(true)
   const [audioActive, setAudioActive] = useState(false)
   const [coachActive, setCoachActive] = useState(false)
+  const [forceStopToken, setForceStopToken] = useState(0)
+  const [pendingExpiry, setPendingExpiry] = useState(false)
   const index = Math.min(session.itemIndex, items.length - 1)
   const item = items[index]
   const currentAnswer = session.answers[item.id]
@@ -305,13 +326,14 @@ function Test({ items, session, setSession, onAnswer, onFinish }: { items: BaseI
   const revealAnswer = useCallback(() => {
     if (!feedbackEligible || reviewed) return
     setFeedbackVisible(true)
-    const updated = { ...session, reviewedItemIds: [...new Set([...(session.reviewedItemIds || []), item.id])], updatedAt: new Date().toISOString() }
+    const updated = { ...sessionRef.current, reviewedItemIds: [...new Set([...(session.reviewedItemIds || []), item.id])], updatedAt: new Date().toISOString() }
     setSession(updated)
     saveActive(updated)
+    recordExamReview(updated, [item], true)
   }, [feedbackEligible, item.id, reviewed, session, setSession])
   const moveNext = useCallback(() => {
     if (index === items.length - 1) { onFinish(); return }
-    const updated = { ...session, itemIndex: index + 1, updatedAt: new Date().toISOString() }
+    const updated = advanceAdaptiveSession(sessionRef.current, items, index + 1)
     setSession(updated)
     saveActive(updated)
   }, [index, items.length, onFinish, session, setSession])
@@ -320,7 +342,7 @@ function Test({ items, session, setSession, onAnswer, onFinish }: { items: BaseI
     let nextIndex = index + 1
     while (nextIndex < items.length && items[nextIndex].section === item.section && items[nextIndex].module === item.module) nextIndex += 1
     if (nextIndex >= items.length) { onFinish(); return }
-    const updated = { ...session, itemIndex: nextIndex, updatedAt: new Date().toISOString() }
+    const updated = advanceAdaptiveSession(sessionRef.current, items, nextIndex)
     setSession(updated)
     saveActive(updated)
   }, [index, isMock, item.module, item.section, items, moveNext, onFinish, session, setSession])
@@ -328,12 +350,25 @@ function Test({ items, session, setSession, onAnswer, onFinish }: { items: BaseI
   const primaryLabel = feedbackEligible && !reviewed ? '정답 확인' : index === items.length - 1 ? 'Finish' : immediateFeedback ? '다음 문제' : 'Next'
   const canBack = !immediateFeedback && item.section !== 'listening' && index > 0 && items[index - 1].section === item.section && items[index - 1].module === item.module
   const back = () => { if (canBack) { const updated = { ...session, itemIndex: index - 1 }; setSession(updated); saveActive(updated) } }
-  const assistantActive = (item.section === 'listening' && audioActive) || (item.section === 'writing' && coachActive)
+  const assistantActive = audioActive || coachActive
   const timerPaused = !isMock && (assistantActive || reviewed)
-  const timerExpire = isMock ? expireScope : feedbackEligible && !reviewed ? revealAnswer : moveNext
-  const mockSeconds = item.section === 'reading' ? (item.module === 1 ? 18 : 12) * 60 : item.section === 'listening' ? (item.module === 1 ? 18 : 11) * 60 : SECTION_META[item.section].minutes * 60
+  const timerExpire = isMock ? () => {
+    if (item.section === 'speaking' && coachActive) { setPendingExpiry(true); setForceStopToken((value) => value + 1) }
+    else expireScope()
+  } : feedbackEligible && !reviewed ? revealAnswer : moveNext
+  useEffect(() => {
+    if (pendingExpiry && !coachActive) { setPendingExpiry(false); expireScope() }
+  }, [pendingExpiry, coachActive, expireScope])
+  const mockSeconds = item.section === 'reading' ? (item.module === 1 ? 18 : 9) * 60 : item.section === 'listening' ? (item.module === 1 ? 18 : session.adaptive?.decisions.listening?.route === 'lower' ? 7 : 11) * 60 : SECTION_META[item.section].minutes * 60
   const timerSeconds = isMock ? mockSeconds : item.timeSeconds
   const timerKey = isMock ? `${item.section}-${item.module}` : item.id
+  const deadline = isMock ? session.moduleDeadlines?.[timerKey] : undefined
+  useEffect(() => {
+    if (!isMock || sessionRef.current.moduleDeadlines?.[timerKey]) return
+    const current = sessionRef.current
+    const updated = { ...current, moduleDeadlines: { ...current.moduleDeadlines, [timerKey]: new Date(Date.now() + mockSeconds * 1000).toISOString() } }
+    setSession(updated); saveActive(updated)
+  }, [isMock, mockSeconds, timerKey])
   const audioAlreadyPlayedForGroup = stimulusWasPlayed(item, session.playedStimulusGroupIds)
   const markAudioPlayed = useCallback(() => {
     const group = item.stimulusGroupId || item.id
@@ -350,10 +385,10 @@ function Test({ items, session, setSession, onAnswer, onFinish }: { items: BaseI
     window.getSelection()?.removeAllRanges()
     questionLayoutRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' })
   }, [item.id])
-  return <div className="test-screen"><header><Brand /><div className="test-tools">{immediateFeedback && <span className="study-mode-badge">즉시 피드백</span>}<button onClick={() => setHelpOpen(true)}>Help</button><button onClick={() => setTimeHidden((value) => !value)}>{timeHidden ? 'Show Time' : 'Hide Time'}</button><span className="timer-wrap"><Timer key={timerKey} seconds={timerSeconds} hidden={timeHidden} paused={timerPaused} onExpire={timerExpire} /></span></div></header><div className="test-subhead"><strong>{SECTION_META[item.section].label} — Module {item.module}</strong><div className="question-nav">{navStart > 0 && <b>…</b>}{visibleNavItems.map((candidate, i) => <span key={candidate.id} className={`${candidate.id === item.id ? 'current' : ''} ${session.answers[candidate.id] !== undefined ? 'answered' : ''}`}>{navStart + i + 1}</span>)}{navStart + visibleNavItems.length < sectionItems.length && <b>…</b>}</div><span>Question {localIndex + 1} of {sectionItems.length}</span></div><main ref={questionLayoutRef} className={`question-layout question-layout--${item.kind}`}><Question key={item.id} item={item} answer={currentAnswer} locked={reviewed} showFeedback={reviewed && feedbackVisible} onAnswer={(answer) => onAnswer(item.id, answer)} onAudioState={item.section === 'listening' ? setAudioActive : undefined} onAudioPlayed={markAudioPlayed} onCoachState={!isMock && item.section === 'writing' ? setCoachActive : undefined} coachEnabled={!isMock} audioAlreadyPlayedForGroup={audioAlreadyPlayedForGroup} /></main><footer><span>{reviewed ? clozeFeedback || `${feedbackCorrect ? '정답' : '복습 필요'} · 현재까지 ${correctSoFar}개 정답` : item.context ? `${item.topic} · ${item.context} · ${item.difficulty}` : `${item.topic} · ${item.difficulty}`}</span><div>{reviewed && <button className="text-button feedback-toggle" aria-pressed={feedbackVisible} onClick={() => setFeedbackVisible((value) => !value)}>{feedbackVisible ? '정답 표시 숨기기' : '정답 표시 보기'}</button>}{canBack && <button className="button button--secondary" onClick={back}><ArrowIcon direction="left" /> Back</button>}<button className="button button--primary" disabled={feedbackEligible && !reviewed && !answered} onClick={primaryAction}>{primaryLabel} <ArrowIcon /></button></div></footer>{helpOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setHelpOpen(false)}><section className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onMouseDown={(event) => event.stopPropagation()}><h2 id="help-title">시험 화면 도움말</h2><ul>{immediateFeedback && <li>정답 확인 뒤 원래 문제 화면에서 맞고 틀린 답을 색으로 표시합니다. 틀린 답 바로 아래에서 정답을 확인하거나 표시를 숨길 수 있습니다.</li>}<li>{immediateFeedback ? '즉시 피드백 연습은 한 방향으로 진행됩니다.' : '모의시험 타이머는 문항이 아니라 현재 섹션 또는 모듈 전체에 적용됩니다.'}</li><li>Listening에서는 한 음원을 한 번 재생하고 같은 묶음의 문제를 이어서 풉니다.</li><li>{isMock ? '모의시험 중에는 AI 글쓰기 코칭과 타이머 일시정지가 제공되지 않습니다.' : '연습 중 오디오와 AI 코칭을 기다리는 동안에는 타이머가 멈춥니다.'}</li><li>Hide Time은 타이머 표시만 숨기며 시간은 계속 흐릅니다.</li><li>응답은 이 브라우저에 자동 저장됩니다.</li></ul><button autoFocus className="button button--primary" onClick={() => setHelpOpen(false)}>Close</button></section></div>}</div>
+  return <div className="test-screen"><header><Brand /><div className="test-tools">{immediateFeedback && <span className="study-mode-badge">즉시 피드백</span>}<button onClick={() => setHelpOpen(true)}>Help</button><button onClick={() => setTimeHidden((value) => !value)}>{timeHidden ? 'Show Time' : 'Hide Time'}</button><span className="timer-wrap"><Timer key={timerKey} seconds={timerSeconds} deadline={deadline} hidden={timeHidden} paused={timerPaused} onExpire={timerExpire} /></span></div></header><div className="test-subhead"><strong>{SECTION_META[item.section].label} — Module {item.module}</strong><div className="question-nav">{navStart > 0 && <b>…</b>}{visibleNavItems.map((candidate, i) => <span key={candidate.id} className={`${candidate.id === item.id ? 'current' : ''} ${session.answers[candidate.id] !== undefined ? 'answered' : ''}`}>{navStart + i + 1}</span>)}{navStart + visibleNavItems.length < sectionItems.length && <b>…</b>}</div><span>Question {localIndex + 1} of {sectionItems.length}</span></div><main ref={questionLayoutRef} className={`question-layout question-layout--${item.kind}`}><Question key={item.id} sessionId={session.id} forceStopToken={forceStopToken} item={item} answer={currentAnswer} locked={reviewed} showFeedback={reviewed && feedbackVisible} onAnswer={(answer) => onAnswer(item.id, answer)} onAudioState={setAudioActive} onAudioPlayed={markAudioPlayed} onCoachState={setCoachActive} coachEnabled={!isMock} audioAlreadyPlayedForGroup={audioAlreadyPlayedForGroup} />{reviewed && !feedbackCorrect && <ReviewCausePanel key={`cause:${item.id}`} item={item} />}</main><footer><span>{reviewed ? clozeFeedback || `${feedbackCorrect ? '정답' : '복습 필요'} · 현재까지 ${correctSoFar}개 정답` : item.context ? `${item.topic} · ${item.context} · ${item.difficulty}` : `${item.topic} · ${item.difficulty}`}</span><div>{reviewed && <button className="text-button feedback-toggle" aria-pressed={feedbackVisible} onClick={() => setFeedbackVisible((value) => !value)}>{feedbackVisible ? '정답 표시 숨기기' : '정답 표시 보기'}</button>}{canBack && <button className="button button--secondary" onClick={back}><ArrowIcon direction="left" /> Back</button>}<button className="button button--primary" disabled={(feedbackEligible && !reviewed && !answered) || (item.section === 'speaking' && coachActive)} onClick={primaryAction}>{primaryLabel} <ArrowIcon /></button></div></footer>{helpOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setHelpOpen(false)}><section className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onMouseDown={(event) => event.stopPropagation()}><h2 id="help-title">시험 화면 도움말</h2><ul>{immediateFeedback && <li>정답 확인 뒤 원래 문제 화면에서 맞고 틀린 답을 색으로 표시합니다. 틀린 답 바로 아래에서 정답을 확인하거나 표시를 숨길 수 있습니다.</li>}<li>{immediateFeedback ? '즉시 피드백 연습은 한 방향으로 진행됩니다.' : '모의시험 타이머는 문항이 아니라 현재 섹션 또는 모듈 전체에 적용됩니다.'}</li><li>Listening에서는 한 음원을 한 번 재생하고 같은 묶음의 문제를 이어서 풉니다.</li><li>{isMock ? '모의시험 중에는 AI 글쓰기 코칭과 타이머 일시정지가 제공되지 않습니다.' : '연습 중 오디오와 AI 코칭을 기다리는 동안에는 타이머가 멈춥니다.'}</li><li>Hide Time은 타이머 표시만 숨기며 시간은 계속 흐릅니다.</li><li>응답은 이 브라우저에 자동 저장됩니다.</li></ul><button autoFocus className="button button--primary" onClick={() => setHelpOpen(false)}>Close</button></section></div>}</div>
 }
 
-function Question({ item, answer, locked = false, showFeedback = false, onAnswer, onAudioState, onAudioPlayed, onCoachState, coachEnabled = true, audioAlreadyPlayedForGroup = false }: { item: BaseItem; answer: Answer | undefined; locked?: boolean; showFeedback?: boolean; onAnswer: (answer: Answer) => void; onAudioState?: (active: boolean) => void; onAudioPlayed?: () => void; onCoachState?: (active: boolean) => void; coachEnabled?: boolean; audioAlreadyPlayedForGroup?: boolean }) {
+function Question({ sessionId, forceStopToken, item, answer, locked = false, showFeedback = false, onAnswer, onAudioState, onAudioPlayed, onCoachState, coachEnabled = true, audioAlreadyPlayedForGroup = false }: { sessionId: string; forceStopToken: number; item: BaseItem; answer: Answer | undefined; locked?: boolean; showFeedback?: boolean; onAnswer: (answer: Answer) => void; onAudioState?: (active: boolean) => void; onAudioPlayed?: () => void; onCoachState?: (active: boolean) => void; coachEnabled?: boolean; audioAlreadyPlayedForGroup?: boolean }) {
   if (item.kind === 'complete-words') {
     const pieces = item.passage!.split(/([A-Za-z’'\-]*___)/g)
     const values = Array.isArray(answer) ? answer : []
@@ -362,7 +397,7 @@ function Question({ item, answer, locked = false, showFeedback = false, onAnswer
     const allCorrect = isCorrect(item, answer)
     return <div className="single-column"><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><div className="cloze-passage">{pieces.map((piece, i) => { if (!piece.endsWith('___')) return <span key={i}>{piece}</span>; blank += 1; const index = blank; const prefix = piece.slice(0, -3); const response = values[index] || ''; const correctValue = correctValues[index] || ''; const blankCorrect = response.trim().toLowerCase() === correctValue.trim().toLowerCase(); const feedbackClass = showFeedback ? blankCorrect ? ' cloze-answer--correct' : ' cloze-answer--wrong' : ''; return <label className={`cloze-answer${feedbackClass}`} key={i}>{prefix}<input aria-label={`빈칸 ${index + 1}`} aria-invalid={showFeedback && !blankCorrect} disabled={locked} value={response} onChange={(event) => { const next = [...values]; next[index] = event.target.value; onAnswer(next) }} />{showFeedback && !blankCorrect && <small>정답: <b>{prefix}{correctValue}</b></small>}</label> })}</div>{showFeedback && <><p className="inline-feedback-summary" role="status">초록색은 맞은 답, 빨간색은 다시 볼 답입니다.</p><InlineAnswerNote correct={allCorrect} explanation={item.explanation} /><div className="question-review-context"><blockquote><strong>정답을 넣은 완성 지문</strong><p>{completedClozePassage(item)}</p></blockquote></div></>}</div>
   }
-  if (item.kind === 'multiple-choice') return <SplitQuestion item={item} answer={answer} locked={locked} showFeedback={showFeedback} onAnswer={onAnswer} />
+  if (item.kind === 'multiple-choice') return <SplitQuestion item={item} answer={answer} locked={locked} showFeedback={showFeedback} onAnswer={onAnswer} studyHelpers={coachEnabled} />
   if (item.kind === 'listen-choice') return <div className="single-column listening"><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div>{audioAlreadyPlayedForGroup ? <p className="notice">이 문제 묶음의 음원은 앞 문항에서 한 번 재생되었습니다.</p> : <AudioPrompt key={item.stimulusGroupId || item.id} text={item.audioText!} speechMode={examSpeechMode('listening', item.title)} onPlaybackChange={onAudioState} onPlayed={onAudioPlayed} />}<h2>{item.prompt || 'Choose the best response.'}</h2><Options options={item.options!} answer={answer} locked={locked} showFeedback={showFeedback} correctAnswer={Number(item.answer)} explanation={item.explanation} onAnswer={onAnswer} /></div>
   if (item.kind === 'sentence-build') {
     const chosen = Array.isArray(answer) ? answer : []
@@ -380,15 +415,15 @@ function Question({ item, answer, locked = false, showFeedback = false, onAnswer
   }
   if (item.kind === 'email' || item.kind === 'discussion') {
     const text = typeof answer === 'string' ? answer : ''
-    return <div className={coachEnabled ? 'writing-layout writing-layout--coach' : 'writing-layout'}><div><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><p className="writing-prompt">{item.prompt}</p>{item.passage && <pre className="student-posts">{item.passage}</pre>}</div><div className="editor"><div className="editor-meta"><strong>Your response</strong><span>{text.trim() ? text.trim().split(/\s+/).length : 0} words</span></div><textarea value={text} onChange={(event) => onAnswer(event.target.value)} spellCheck={false} placeholder="Type your response here…" /></div>{coachEnabled && <Suspense fallback={<aside className="writing-coach writing-coach--loading">AI 코치를 불러오는 중입니다…</aside>}><WritingCoach key={item.id} item={item} response={text} onApply={onAnswer} onBusyChange={onCoachState} /></Suspense>}</div>
+    return <div className={coachEnabled ? 'writing-layout writing-layout--coach' : 'writing-layout'}><div><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><p className="writing-prompt">{item.prompt}</p>{item.passage && <pre className="student-posts">{item.passage}</pre>}</div><div className="editor"><div className="editor-meta"><strong>Your response</strong><span>{text.trim() ? text.trim().split(/\s+/).length : 0} words</span></div><textarea value={text} onChange={(event) => onAnswer(event.target.value)} spellCheck={false} placeholder="Type your response here…" /></div>{coachEnabled && <Suspense fallback={<aside className="writing-coach writing-coach--loading">AI 코치를 불러오는 중입니다…</aside>}><WritingCoach key={item.id} item={item} response={text} onApply={(revised) => { preserveWritingEditor(sessionId, item.id, text, []); onAnswer(revised) }} onBusyChange={onCoachState} /></Suspense>}{coachEnabled && <WritingWorkshop item={item} sessionId={sessionId} response={text} onApply={onAnswer} />}</div>
   }
-  return <div className="single-column speaking"><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><AudioPrompt key={item.id} text={item.audioText!} speechMode={examSpeechMode('speaking', item.title)} /><div className="speaking-prompt">{item.kind === 'interview' ? item.audioText : 'Repeat the sentence you heard.'}</div><Recorder onRecorded={(duration) => onAnswer(duration)} /></div>
+  return <div className="single-column speaking"><div className="question-title"><span>{item.title}</span><ContextLabel item={item} /><h1>{item.instruction}</h1></div><AudioPrompt key={item.id} text={item.audioText!} speechMode={examSpeechMode('speaking', item.title)} onPlaybackChange={onAudioState} /><div className="speaking-prompt">{item.kind === 'interview' ? item.audioText : 'Repeat the sentence you heard.'}</div><SpeakingPractice key={`${sessionId}:${item.id}`} item={item} sessionId={sessionId} forceStopToken={forceStopToken} onAnswer={onAnswer} coachEnabled={coachEnabled} onBusyChange={onCoachState} /></div>
 }
 
 function ContextLabel({ item }: { item: BaseItem }) { return item.context ? <small className="context-label">{item.topic} · {item.context}</small> : null }
 
-function SplitQuestion({ item, answer, locked, showFeedback, onAnswer }: { item: BaseItem; answer: Answer | undefined; locked: boolean; showFeedback: boolean; onAnswer: (a: Answer) => void }) {
-  return <><article className="passage-pane"><h2>Read the passage.</h2><ContextLabel item={item} /><Suspense fallback={<p>{item.passage}</p>}><ReadingAssistant passage={item.passage!} topic={item.topic || '일반'} /></Suspense></article><section className="answer-pane"><h1>{item.prompt}</h1><Options options={item.options!} answer={answer} locked={locked} showFeedback={showFeedback} correctAnswer={Number(item.answer)} explanation={item.explanation} onAnswer={onAnswer} /></section></>
+export function SplitQuestion({ item, answer, locked, showFeedback, onAnswer, studyHelpers = true }: { item: BaseItem; answer: Answer | undefined; locked: boolean; showFeedback: boolean; onAnswer: (a: Answer) => void; studyHelpers?: boolean }) {
+  return <><article className="passage-pane"><h2>Read the passage.</h2><ContextLabel item={item} />{studyHelpers ? <Suspense fallback={<p>{item.passage}</p>}><ReadingAssistant passage={item.passage!} topic={item.topic || '일반'} /></Suspense> : <p>{item.passage}</p>}</article><section className="answer-pane"><h1>{item.prompt}</h1><Options options={item.options!} answer={answer} locked={locked} showFeedback={showFeedback} correctAnswer={Number(item.answer)} explanation={item.explanation} onAnswer={onAnswer} /></section></>
 }
 
 function InlineAnswerNote({ answer, explanation, correct = false }: { answer?: string; explanation?: string; correct?: boolean }) {
@@ -404,9 +439,9 @@ function Options({ options, answer, locked, showFeedback = false, correctAnswer,
 }
 
 function Result({ items, session, onHome, onRetry, onRandomEligibilityChange }: { items: BaseItem[]; session: SavedSession; onHome: () => void; onRetry: () => void; onRandomEligibilityChange: (eligible: boolean) => void }) {
-  const { total, correct, mistakes, answered, practiceBand } = getSessionStats(items, session)
+  const { total, correct, mistakes, answered, percent } = getSessionStats(items, session)
   const randomEligible = session.randomEligible !== false
-  return <div className="result-page"><header><Brand /><span>Practice result</span></header><main><div className="result-lead"><p>세트를 완료했습니다.</p><h1>{practiceBand ? `${practiceBand.toFixed(1)} / 6.0` : `${answered}개 응답`}</h1><span>자동 채점 가능한 문항만 반영한 연습 추정치이며 ETS 공식 점수가 아닙니다.</span></div><div className="result-grid"><div><span>응답 완료</span><strong>{answered} / {items.length}</strong></div><div><span>자동 채점 항목 (빈칸별)</span><strong>{correct} / {total}</strong></div><div><span>복습 필요</span><strong>{mistakes.length}문항</strong></div></div><section className="result-random-choice"><div><strong>이 세트의 문항을 랜덤 후보에 다시 넣을까요?</strong><p>제외해도 학습 기록과 답안·해설은 그대로 보존됩니다.</p></div><button className={randomEligible ? 'pool-toggle' : 'pool-toggle pool-toggle--excluded'} aria-pressed={!randomEligible} onClick={() => onRandomEligibilityChange(!randomEligible)}><span>{randomEligible ? '랜덤 후보에 포함 중' : '랜덤 후보에서 제외됨'}</span><small>{randomEligible ? '다시 출제될 수 있습니다.' : '이 문항들은 건너뜁니다.'}</small></button></section>{mistakes.length > 0 && <section className="review-section"><div className="section-heading"><h2>정답과 해설</h2><p>틀렸거나 건너뛴 자동 채점 문항을 확인하세요.</p></div><div className="review-list">{mistakes.map((item, index) => <article key={item.id}><div className="review-number">{index + 1}</div><div><span>{item.title} · {item.topic}{item.context ? ` · ${item.context}` : ''} · {item.difficulty}</span><h3>{item.prompt || item.instruction}</h3><QuestionReviewContext item={item} /><dl><dt>내 답</dt><dd>{displayAnswer(item, session.answers[item.id])}</dd><dt>정답</dt><dd>{displayAnswer(item, item.answer)}</dd></dl><p>{item.explanation}</p></div></article>)}</div></section>}<div className="result-actions"><button className="button button--secondary button--large" onClick={onHome}>홈으로</button><button className="button button--primary button--large" onClick={onRetry}>같은 세트 다시 풀기 <ArrowIcon /></button></div></main></div>
+  return <div className="result-page"><header><Brand /><span>Practice result</span></header><main><div className="result-lead"><p>세트를 완료했습니다.</p><h1>{percent !== null ? `정답률 ${percent}%` : `${answered}개 응답`}</h1><span>객관식·빈칸의 학습 정답률입니다. 쓰기·말하기 능력이나 ETS 공식 점수로 환산하지 않습니다.</span></div><div className="result-grid"><div><span>응답 완료</span><strong>{answered} / {items.length}</strong></div><div><span>자동 채점 항목 (빈칸별)</span><strong>{correct} / {total}</strong></div><div><span>복습 필요</span><strong>{mistakes.length}문항</strong></div></div><SectionPerformance items={items} session={session} /><section className="result-random-choice"><div><strong>이 세트의 문항을 랜덤 후보에 다시 넣을까요?</strong><p>제외해도 학습 기록과 답안·해설은 그대로 보존됩니다.</p></div><button className={randomEligible ? 'pool-toggle' : 'pool-toggle pool-toggle--excluded'} aria-pressed={!randomEligible} onClick={() => onRandomEligibilityChange(!randomEligible)}><span>{randomEligible ? '랜덤 후보에 포함 중' : '랜덤 후보에서 제외됨'}</span><small>{randomEligible ? '다시 출제될 수 있습니다.' : '이 문항들은 건너뜁니다.'}</small></button></section>{mistakes.length > 0 && <section className="review-section"><div className="section-heading"><h2>정답과 해설</h2><p>틀렸거나 건너뛴 자동 채점 문항을 확인하세요.</p></div><div className="review-list">{mistakes.map((item, index) => <article key={item.id}><div className="review-number">{index + 1}</div><div><span>{item.title} · {item.topic}{item.context ? ` · ${item.context}` : ''} · {item.difficulty}</span><h3>{item.prompt || item.instruction}</h3><QuestionReviewContext item={item} /><dl><dt>내 답</dt><dd>{displayAnswer(item, session.answers[item.id])}</dd><dt>정답</dt><dd>{displayAnswer(item, item.answer)}</dd></dl><p>{item.explanation}</p><ReviewCausePanel item={item} /></div></article>)}</div></section>}<div className="result-actions"><button className="button button--secondary button--large" onClick={onHome}>홈으로</button><button className="button button--primary button--large" onClick={onRetry}>같은 세트 다시 풀기 <ArrowIcon /></button></div></main></div>
 }
 
 export default App

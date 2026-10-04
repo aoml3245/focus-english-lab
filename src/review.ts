@@ -37,6 +37,14 @@ export function getSessionStats(items: BaseItem[], session: SavedSession) {
   const correct = scores.reduce((sum, score) => sum + score.correct, 0)
   const total = scores.reduce((sum, score) => sum + score.total, 0)
   const answered = items.filter((item) => session.answers[item.id] !== undefined).length
-  const practiceBand = total ? Math.max(1, Math.min(6, Math.round((1 + (correct / total) * 5) * 2) / 2)) : null
-  return { objective, total, correct, answered, practiceBand, mistakes: objective.filter((item) => !isCorrect(item, session.answers[item.id])) }
+  const sectionStats = (['reading', 'listening', 'writing', 'speaking'] as const).map((section) => {
+    const sectionItems = items.filter((item) => item.section === section)
+    const results = sectionItems.map((item) => scoreItem(item, session.answers[item.id]))
+    const total = results.reduce((sum, result) => sum + result.total, 0)
+    const correct = results.reduce((sum, result) => sum + result.correct, 0)
+    return { section, correct, total, percent: total ? Math.round(correct / total * 100) : null,
+      constructed: sectionItems.filter((item) => item.answer === undefined).length,
+      constructedAnswered: sectionItems.filter((item) => item.answer === undefined && session.answers[item.id] !== undefined).length }
+  })
+  return { objective, total, correct, answered, percent: total ? Math.round(correct / total * 100) : null, sectionStats, mistakes: objective.filter((item) => !isCorrect(item, session.answers[item.id])) }
 }

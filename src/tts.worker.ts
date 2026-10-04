@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
-import { env, RawAudio } from '@huggingface/transformers'
+import { env } from '@huggingface/transformers'
+import { encodePcm16Wav } from './pcmWav.mjs'
 import { KokoroTTS, TextSplitterStream } from 'kokoro-js'
 import { applyQuestionRise, type SpeechIntonation } from './ttsProsody'
 
@@ -215,7 +216,7 @@ async function generate(message: GenerateMessage) {
       post('cancelled', message.requestId)
     }
     else {
-      const blob = new RawAudio(audioChunks, sampleRate).toBlob()
+      const blob = new Blob([encodePcm16Wav(audioChunks, sampleRate)], { type: 'audio/wav' })
       diagnose(message.requestId, 'first-chunk', `전체 문장을 하나의 연속 오디오로 완성했습니다.`, { segments: segmentCount, bytes: blob.size })
       post('chunk', message.requestId, { blob, index: 0, text: renderedText.join(' ') })
       diagnose(message.requestId, 'generation-done', `음성 생성을 마쳤습니다 (내부 ${segmentCount}구간 → 연속 오디오 1개).`, { chunks: 1, segments: segmentCount })

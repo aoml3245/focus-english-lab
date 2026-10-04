@@ -8,6 +8,7 @@ import { APP_VERSION } from './version'
 import { refreshAppToLatest } from './AppUpdate'
 import { loadThemePreference, saveThemePreference, type ThemePreference } from './theme'
 import CloudSyncSettings from './CloudSyncSettings'
+import { SpeakingStorageManager } from './SpeakingPractice'
 
 const EMPTY_CACHE: TtsAudioCacheStats = { entries: 0, bytes: 0 }
 const formatMegabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(bytes ? 1 : 0)} MB`
@@ -142,7 +143,7 @@ export default function Settings({ onBack, onVoiceSettings, onExamData }: { onBa
 
       <section className="settings-section">
         <div className="settings-section-head"><div><span>06</span><h2>개인 계정과 2인 공유</h2><p>내 기록은 계정별로 따로 보관하고, 공유 코드를 연결한 두 사용자만 같은 단어 목록을 사용합니다.</p></div></div>
-        <CloudSyncSettings />
+        <CloudSyncSettings /><SpeakingStorageManager />
       </section>
 
       <section className="settings-section">

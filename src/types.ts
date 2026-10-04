@@ -37,6 +37,12 @@ export interface BaseItem {
   sequenceIndex?: number
   sourceFamily?: string
   explanation?: string
+  modelResponse?: string
+  taskChecklist?: string[]
+  commonMistakes?: string[]
+  rewriteGuidance?: string[]
+  targetSkills?: string[]
+  responseTimeSeconds?: number
 }
 
 export type Answer = string | number | string[]
@@ -56,4 +62,11 @@ export interface SavedSession {
   questionBankRevision?: string
   itemSnapshots?: BaseItem[]
   playedStimulusGroupIds?: string[]
+  adaptive?: {
+    version: 1
+    candidates: Partial<Record<'reading' | 'listening', { lower: BaseItem[]; upper: BaseItem[] }>>
+    decisions: Partial<Record<'reading' | 'listening', { route: 'lower' | 'upper'; correct: number; total: number; decidedAt: string }>>
+  }
+  reviewSource?: 'exact' | 'transfer'
+  moduleDeadlines?: Record<string, string>
 }

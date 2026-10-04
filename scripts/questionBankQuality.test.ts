@@ -55,7 +55,7 @@ describe('directly authored TOEFL-style bank', () => {
   })
 
   it('contains only directly authored active items without duplicate ids', () => {
-    expect(QUESTION_BANK).toHaveLength(2922)
+    expect(QUESTION_BANK).toHaveLength(3352)
     expect(CONTEXT_TOPIC_COUNT).toBeGreaterThanOrEqual(30)
     expect(new Set(QUESTION_BANK.map((item) => item.id)).size).toBe(QUESTION_BANK.length)
     expect(QUESTION_BANK.every((item) => item.sourceFamily?.startsWith('authored-'))).toBe(true)
@@ -73,7 +73,7 @@ describe('directly authored TOEFL-style bank', () => {
 
     for (const item of QUESTION_BANK.filter((candidate) => candidate.title === 'Read an Academic Passage')) {
       expect(words(item.passage)).toBeGreaterThanOrEqual(35)
-      expect(words(item.passage)).toBeLessThanOrEqual(200)
+      expect(words(item.passage)).toBeLessThanOrEqual(item.sourceFamily === 'authored-full-academic-reading' ? 220 : 200)
     }
     for (const item of QUESTION_BANK.filter((candidate) => candidate.title === 'Read in Daily Life')) {
       expect(words(item.passage)).toBeGreaterThanOrEqual(15)
@@ -110,7 +110,7 @@ describe('directly authored TOEFL-style bank', () => {
 
   it('prevents copied answers, position cues, and repeated templates across the full Reading bank', () => {
     const reading = QUESTION_BANK.filter((item) => item.section === 'reading' && item.kind === 'multiple-choice')
-    expect(reading).toHaveLength(628)
+    expect(reading).toHaveLength(778)
 
     const answerDistribution = [0, 1, 2, 3].map((answer) => reading.filter((item) => item.answer === answer).length)
     expect(Math.max(...answerDistribution) - Math.min(...answerDistribution)).toBeLessThanOrEqual(1)

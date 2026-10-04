@@ -12,15 +12,15 @@ export function ArrowIcon({ direction = 'right' }: { direction?: 'left' | 'right
   return <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d={direction === 'right' ? 'm9 18 6-6-6-6' : 'm15 18-6-6 6-6'} /></svg>
 }
 
-export function Timer({ seconds, onExpire, hidden = false, paused = false }: { seconds: number; onExpire: () => void; hidden?: boolean; paused?: boolean }) {
+export function Timer({ seconds, onExpire, hidden = false, paused = false, deadline }: { seconds: number; onExpire: () => void; hidden?: boolean; paused?: boolean; deadline?: string }) {
   const [left, setLeft] = useState(seconds)
   const expired = useRef(false)
-  useEffect(() => { setLeft(seconds); expired.current = false }, [seconds])
+  useEffect(() => { setLeft(deadline ? Math.max(0, Math.ceil((Date.parse(deadline) - Date.now()) / 1000)) : seconds); expired.current = false }, [seconds, deadline])
   useEffect(() => {
     if (paused) return undefined
-    const id = window.setInterval(() => setLeft((value) => Math.max(0, value - 1)), 1000)
+    const id = window.setInterval(() => setLeft((value) => deadline ? Math.max(0, Math.ceil((Date.parse(deadline) - Date.now()) / 1000)) : Math.max(0, value - 1)), 1000)
     return () => window.clearInterval(id)
-  }, [paused])
+  }, [paused, deadline])
   useEffect(() => {
     if (left === 0 && !expired.current) { expired.current = true; onExpire() }
   }, [left, onExpire])

@@ -137,18 +137,22 @@ const pickStage = (bank: BaseItem[], title: string, count: number, excluded: Rea
 }
 
 export function buildReadingBlueprint(bank: BaseItem[], excludedIds: ReadonlySet<string> = new Set()) {
+  const fullAcademic = bank.filter((item) => item.sourceFamily === 'authored-full-academic-reading')
+  const fullAvailable = fullAcademic.filter((item) => !excludedIds.has(item.id)).length >= 10
+  const academicBank = fullAvailable ? fullAcademic : bank
+  const academicSizes = new Set(fullAvailable ? [5] : [2, 3, 5])
   const moduleOneCloze = pickStage(bank, 'Complete the Words', 2, excludedIds, 1, new Set([1]))
   const afterOneCloze = new Set([...excludedIds, ...ids(moduleOneCloze)])
   const moduleOneDaily = pickStage(bank, 'Read in Daily Life', 4, afterOneCloze, 1, new Set([1, 2]))
   const afterOneDaily = new Set([...afterOneCloze, ...ids(moduleOneDaily)])
-  const moduleOneAcademic = pickStage(bank, 'Read an Academic Passage', 5, afterOneDaily, 1, new Set([2, 3]))
+  const moduleOneAcademic = pickStage(academicBank, 'Read an Academic Passage', 5, afterOneDaily, 1, academicSizes)
   const afterModuleOne = new Set([...afterOneDaily, ...ids(moduleOneAcademic)])
 
   const moduleTwoCloze = pickStage(bank, 'Complete the Words', 1, afterModuleOne, 2, new Set([1]))
   const afterTwoCloze = new Set([...afterModuleOne, ...ids(moduleTwoCloze)])
   const moduleTwoDaily = pickStage(bank, 'Read in Daily Life', 6, afterTwoCloze, 2, new Set([1, 2]))
   const afterTwoDaily = new Set([...afterTwoCloze, ...ids(moduleTwoDaily)])
-  const moduleTwoAcademic = pickStage(bank, 'Read an Academic Passage', 5, afterTwoDaily, 2, new Set([2, 3]))
+  const moduleTwoAcademic = pickStage(academicBank, 'Read an Academic Passage', 5, afterTwoDaily, 2, academicSizes)
   return [...moduleOneCloze, ...moduleOneDaily, ...moduleOneAcademic, ...moduleTwoCloze, ...moduleTwoDaily, ...moduleTwoAcademic]
 }
 
@@ -191,8 +195,11 @@ const pickDiverseSentenceBuild = (bank: BaseItem[], count: number, excludedIds: 
 export function buildWritingBlueprint(bank: BaseItem[], excludedIds: ReadonlySet<string> = new Set()) {
   const sentences = pickDiverseSentenceBuild(bank, 10, excludedIds)
   const afterSentences = new Set([...excludedIds, ...ids(sentences)])
-  const email = pickGroupedExact(bank, (item) => item.title === 'Write an Email', 1, afterSentences)
-  const discussion = pickGroupedExact(bank, (item) => item.title === 'Write for an Academic Discussion', 1, new Set([...afterSentences, ...ids(email)]))
+  const modelBank = bank.filter((item) => item.modelResponse && !excludedIds.has(item.id))
+  const emailBank = modelBank.some((item) => item.kind === 'email') ? modelBank : bank
+  const discussionBank = modelBank.some((item) => item.kind === 'discussion') ? modelBank : bank
+  const email = pickGroupedExact(emailBank, (item) => item.title === 'Write an Email', 1, afterSentences)
+  const discussion = pickGroupedExact(discussionBank, (item) => item.title === 'Write for an Academic Discussion', 1, new Set([...afterSentences, ...ids(email)]))
   return [...sentences, ...email, ...discussion]
 }
 

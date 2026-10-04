@@ -14,6 +14,12 @@ describe('portable exam packs', () => {
     const pack = createExamPack([item], 'Portable test')
     expect(parseExamPack(JSON.parse(JSON.stringify(pack)))).toMatchObject({ format: EXAM_PACK_FORMAT, title: 'Portable test', items: [item] })
   })
+  it('preserves coached task metadata and rejects invalid optional fields', () => {
+    const email = QUESTION_BANK.find((candidate) => candidate.id === 'coached-email-01')!
+    expect(parseExamPack(createExamPack([email])).items[0]).toEqual(email)
+    expect(() => parseExamPack(createExamPack([{ ...email, taskChecklist: [42] } as unknown as BaseItem]))).toThrow(/잘못된/)
+    expect(() => parseExamPack(createExamPack([{ ...email, responseTimeSeconds: -1 }]))).toThrow(/잘못된/)
+  })
 
   it('rejects duplicate ids and invalid answer indexes', () => {
     expect(() => parseExamPack({ ...createExamPack([item]), items: [item, item] })).toThrow(/중복/)

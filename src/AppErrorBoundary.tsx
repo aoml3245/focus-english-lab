@@ -1,14 +1,18 @@
 import { Component, type ReactNode } from 'react'
 import { refreshAppToLatest } from './AppUpdate'
 
-type State = { failed: boolean; busy: boolean; message: string }
+type State = { failed: boolean; busy: boolean; message: string; diagnostic: string }
 
 /** A deployment can invalidate lazy bundles in a tab running an older version. */
 export default class AppErrorBoundary extends Component<{ children: ReactNode }, State> {
-  state: State = { failed: false, busy: false, message: '' }
+  state: State = { failed: false, busy: false, message: '', diagnostic: '' }
 
-  static getDerivedStateFromError(): Partial<State> {
-    return { failed: true }
+  static getDerivedStateFromError(error?: Error): Partial<State> {
+    return { failed: true, diagnostic: import.meta.env.DEV ? error?.message || '' : '' }
+  }
+
+  componentDidCatch(error: Error) {
+    if (import.meta.env.DEV) console.error('Focus English Lab screen error:', error)
   }
 
   update = async () => {
@@ -27,6 +31,7 @@ export default class AppErrorBoundary extends Component<{ children: ReactNode },
       <h1>화면을 다시 불러와 주세요.</h1>
       <p>배포 후 이전 앱 파일을 불러오지 못했거나 화면에 오류가 생겼습니다.</p>
       <p>저장된 단어장·학습 기록·음성 모델은 삭제하지 않습니다. 아직 저장되지 않은 입력은 다시 적어야 할 수 있습니다.</p>
+      {this.state.diagnostic && <p>개발용 오류 진단: {this.state.diagnostic}</p>}
       <button className="button button--primary" disabled={this.state.busy} onClick={() => void this.update()}>
         {this.state.busy ? '업데이트 확인 중…' : '최신 버전으로 다시 열기'}
       </button>

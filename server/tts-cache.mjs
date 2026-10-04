@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, rename, stat, unlink } from 'node:fs/promises'
+import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { KokoroTTS } from 'kokoro-js'
 import { env } from '@huggingface/transformers'
+import { compactWavBytes } from '../src/pcmWav.mjs'
 
 const MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX'
 const MODEL_VERSION = 'kokoro-82m-v1-q8'
@@ -80,23 +81,24 @@ async function getCachedAudio(cacheDir, text, voice, speed) {
   await mkdir(cacheDir, { recursive: true })
   const key = cacheKey(text, voice, speed)
   const target = path.join(cacheDir, `${key}.wav`)
-  if (await exists(target)) return { buffer: await readFile(target), hit: true, key, generationMs: 0 }
+  if (await exists(target)) return { buffer: compactWavBytes(await readFile(target)), hit: true, key, generationMs: 0 }
   let pending = pendingAudio.get(key)
   if (!pending) {
     pending = enqueue(async () => {
-      if (await exists(target)) return { buffer: await readFile(target), hit: true, key, generationMs: 0 }
+      if (await exists(target)) return { buffer: compactWavBytes(await readFile(target)), hit: true, key, generationMs: 0 }
       const startedAt = Date.now()
       const model = await getModel()
       const temp = `${target}.${process.pid}.tmp`
       try {
         const audio = await model.generate(text, { voice, speed })
         await audio.save(temp)
+        await writeFile(temp, compactWavBytes(await readFile(temp)))
         await rename(temp, target)
       } catch (error) {
         await unlink(temp).catch(() => undefined)
         throw error
       }
-      return { buffer: await readFile(target), hit: false, key, generationMs: Date.now() - startedAt }
+      return { buffer: compactWavBytes(await readFile(target)), hit: false, key, generationMs: Date.now() - startedAt }
     }).finally(() => pendingAudio.delete(key))
     pendingAudio.set(key, pending)
   }
